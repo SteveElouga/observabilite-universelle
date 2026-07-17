@@ -1,0 +1,22 @@
+# --- Secrets & environnement (règle : jamais de secret dans Git — CONTEXT.md) ---
+.env
+*.env
+!.env.example
+
+# --- Données & volumes locaux de la stack ---
+observability/**/data/
+observability/**/*.local.*
+
+# --- OS / éditeurs ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Python (instrumentation Django à venir) ---
+__pycache__/
+*.pyc
+.venv/
+
+# --- Node (frontend Angular / k6 à venir) ---
+node_modules/

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Règles R2/R4/R6/R7 (README.md) : jamais de push direct vers main ou develop.
+# Seule tolérance : la CRÉATION initiale de la branche sur un remote vierge
+# (remote_sha = 0000…) pour la première publication du dépôt — voir README.md.
+zero="0000000000000000000000000000000000000000"
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/develop)
+      if [ "$remote_sha" = "$zero" ]; then
+        echo "ℹ️  Création initiale de '${remote_ref#refs/heads/}' sur le remote : autorisée (première publication)." >&2
+      else
+        echo "" >&2
+        echo "⛔ PUSH REFUSÉ vers '${remote_ref#refs/heads/}' : passez par une MR (règles R2, R4, R6 — README.md)." >&2
+        echo "" >&2
+        status=1
+      fi
+      ;;
+  esac
+done
+exit $status
