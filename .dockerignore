@@ -1,0 +1,38 @@
+# .dockerignore (racine) — PRÉVENTIF.
+# Ce dépôt ne construit AUCUNE image aujourd'hui : le compose (§10.4 du document
+# maître) n'utilise que des images officielles, sans directive `build:`.
+# Ce fichier existe pour qu'un futur `docker build` ne puisse JAMAIS embarquer
+# de secrets ni de fichiers inutiles dans une image (cf. conventions CONTEXT.md).
+# NB : un .dockerignore ne s'applique qu'à la racine du contexte de build ;
+# si un Dockerfile apparaît dans un sous-dossier avec son propre contexte,
+# ce sous-dossier devra avoir son propre .dockerignore.
+
+# --- Secrets & environnement (ne doivent jamais entrer dans une image) ---
+.env
+*.env
+!.env.example
+
+# --- Git & gouvernance (inutiles dans une image) ---
+.git/
+.githooks/
+.gitignore
+.dockerignore
+scripts/
+
+# --- Documentation (volumineuse, pas sa place dans un contexte de build) ---
+*.md
+
+# --- OS / éditeurs ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- Python / Node ---
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+
+# --- Données locales des services ---
+observability/**/data/
