@@ -6,7 +6,7 @@
 >
 > **Note sur les prix** : les tarifs cités sont des **prix catalogue indicatifs de 2026** et servent uniquement de repère de comparaison. Ils évoluent régulièrement ; vérifiez toujours sur le site de l'éditeur avant toute décision.
 >
-> **Révision — 17 juillet 2026** : ① l'astreinte passe de Grafana OnCall (OSS **archivé le 24/03/2026**) à **OneUptime** (§4.11) ; ② les métriques de la carte des services sont désormais générées **au Collector, avant échantillonnage** (§10.3) ; ③ **Pyroscope** rejoint le compose mono-serveur (§10.4) ; ④ nouvelles sous-sections **durcissement pré-production (§7.4)** et **« qui surveille le surveillant ? » (§7.5)** ; ⑤ les chiffres d'adoption sont attribués à leurs sources (§9.4).
+> **Révision — 17 juillet 2026** : ① l'astreinte passe de Grafana OnCall (OSS **archivé le 24/03/2026**) à **OneUptime** (§4.11) ; ② les métriques de la carte des services sont désormais générées **au Collector, avant échantillonnage** (§10.3) ; ③ **Pyroscope** rejoint le compose mono-serveur (§10.4) ; ④ nouvelles sous-sections **durcissement pré-production (§7.4)** et **« qui surveille le surveillant ? » (§7.5)** ; ⑤ les chiffres d'adoption sont attribués à leurs sources (§9.4) ; ⑥ §10 alignée sur l'implémentation du dépôt (`observability/`) — 4 correctifs d'exécutabilité : webhook Slack en `api_url_file`, migrations GlitchTip + healthcheck, télémétrie du Collector sur `0.0.0.0:8888`, Alloy avec label `container` et traces Faro via le Collector.
 
 ---
 
@@ -1037,6 +1037,14 @@ exporters:
     endpoint: http://loki:3100/otlp                 # ingestion OTLP native de Loki 3
 
 service:
+  telemetry:
+    metrics:                     # santé du Collector, scrapée par Prometheus (écran 12, §10.4)
+      readers:                   # par défaut le Collector n'écoute que sur localhost → on ouvre 0.0.0.0
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
   pipelines:
     traces/derive:                                   # ① 100 % des spans → métriques dérivées (PAS d'échantillonnage ici)
       receivers:  [otlp]
@@ -1064,16 +1072,21 @@ Arborescence attendue :
 ```text
 observability/
 ├── docker-compose.yml
+├── .env.example                      (→ cp .env.example .env, jamais commité)
 ├── otel-collector-config.yaml        (§10.3)
 ├── alloy-config.alloy                (logs Docker + récepteur Faro)
 ├── prometheus/
 │   ├── prometheus.yml
-│   └── rules/  (red.yml, rules-slo.yml — §10.6)
-├── alertmanager/alertmanager.yml     (§10.6)
+│   └── rules/  (red.yml ; rules-slo.yml généré par sloth — §10.6)
+├── alertmanager/
+│   ├── alertmanager.yml              (§10.6)
+│   └── secrets/slack_webhook_url     (hors Git — un .example est versionné)
 ├── loki-config.yaml
 ├── tempo-config.yaml
 ├── blackbox.yml                      (§10.7)
-└── grafana/provisioning/datasources/datasources.yaml   (§10.5)
+├── grafana/provisioning/datasources/datasources.yaml   (§10.5)
+├── k6/smoke.js                       (§10.7)
+└── slo/units-service.yml             (§10.6)
 ```
 
 ```yaml
@@ -1157,6 +1170,11 @@ services:
     image: postgres:16-alpine
     environment: { POSTGRES_PASSWORD: "${GT_DB_PASSWORD}", POSTGRES_DB: glitchtip }
     volumes: ["gt-db:/var/lib/postgresql/data"]
+    healthcheck:                               # évite que web/worker/migrate ne partent avant la base
+      test: ["CMD-SHELL", "pg_isready -U postgres -d glitchtip"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
   glitchtip-redis:
     image: redis:7-alpine
   glitchtip:
@@ -1167,12 +1185,25 @@ services:
       SECRET_KEY: ${GT_SECRET_KEY}
       GLITCHTIP_DOMAIN: https://glitchtip.example.com
     ports: ["8000:8000"]
-    depends_on: [glitchtip-db, glitchtip-redis]
+    depends_on:
+      glitchtip-db: { condition: service_healthy }
+      glitchtip-redis: { condition: service_started }
+      glitchtip-migrate: { condition: service_completed_successfully }
+  glitchtip-migrate:                           # migrations du schéma — one-shot au (re)démarrage
+    image: glitchtip/glitchtip:v4.2
+    command: ./manage.py migrate
+    restart: "no"
+    environment: *gt_env
+    depends_on:
+      glitchtip-db: { condition: service_healthy }
   glitchtip-worker:
     image: glitchtip/glitchtip:v4.2
     command: ./bin/run-celery-with-beat.sh
     environment: *gt_env
-    depends_on: [glitchtip-db, glitchtip-redis]
+    depends_on:
+      glitchtip-db: { condition: service_healthy }
+      glitchtip-redis: { condition: service_started }
+      glitchtip-migrate: { condition: service_completed_successfully }
 
 volumes:
   prom-data: {}
@@ -1249,32 +1280,44 @@ compactor:
 ```
 
 ```alloy
-// alloy-config.alloy — logs des conteneurs → Loki, et récepteur Faro → Loki/Tempo
+// alloy-config.alloy — logs des conteneurs → Loki, et récepteur Faro (RUM web).
+// Les traces Faro passent par le COLLECTOR (règle §3 : tout transite par lui) :
+// elles bénéficient ainsi du tail sampling et des métriques dérivées (§10.3).
 discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
 }
+// Sans relabel, les flux Loki n'auraient aucun sélecteur exploitable :
+// on promeut le nom du conteneur en label `container` (faible cardinalité).
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
 loki.source.docker "apps" {
   host       = "unix:///var/run/docker.sock"
-  targets    = discovery.docker.containers.targets
+  targets    = discovery.relabel.containers.output
   forward_to = [loki.write.default.receiver]
 }
 faro.receiver "web" {
   server {
     listen_address       = "0.0.0.0"
     listen_port          = 12347
-    cors_allowed_origins = ["*"]
+    cors_allowed_origins = ["*"]          // à restreindre au domaine du front en prod (§7.4)
   }
   output {
     logs   = [loki.write.default.receiver]
-    traces = [otelcol.exporter.otlp.tempo.input]
+    traces = [otelcol.exporter.otlp.collector.input]
   }
 }
 loki.write "default" {
   endpoint { url = "http://loki:3100/loki/api/v1/push" }
 }
-otelcol.exporter.otlp "tempo" {
+otelcol.exporter.otlp "collector" {
   client {
-    endpoint = "tempo:4317"
+    endpoint = "otel-collector:4317"
     tls { insecure = true }
   }
 }
@@ -1418,7 +1461,9 @@ inhibit_rules:              # un "page" actif fait taire les "ticket" du même s
 receivers:
   - name: slack
     slack_configs:
-      - api_url: ${SLACK_WEBHOOK_URL}
+      # ⚠ Alertmanager ne substitue PAS les variables d'environnement dans sa config :
+      # le webhook vit dans un fichier monté, HORS GIT (alertmanager/secrets/).
+      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
         channel: "#alertes"
         send_resolved: true
 ```
