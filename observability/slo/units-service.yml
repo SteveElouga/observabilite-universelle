@@ -1,0 +1,17 @@
+# slo/units-service.yml — SLO-as-code (Sloth, §4.12 / §10.6)
+# Génération des règles multi-burn-rate + alertes :
+#   sloth generate -i slo/units-service.yml -o prometheus/rules/rules-slo.yml
+# (rules-slo.yml est un ARTEFACT GÉNÉRÉ — le régénérer, ne pas l'éditer à la main.)
+version: prometheus/v1
+service: units-service
+slos:
+  - name: requests-availability
+    objective: 99.9                      # → budget d'erreur : 43 min / 30 jours
+    sli:
+      events:
+        error_query: sum(rate(http_server_request_duration_seconds_count{service_name="units-service",http_response_status_code=~"5.."}[{{.window}}]))
+        total_query: sum(rate(http_server_request_duration_seconds_count{service_name="units-service"}[{{.window}}]))
+    alerting:
+      name: UnitsServiceAvailability
+      page_alert:   { labels: { severity: page } }     # burn rate rapide → réveil
+      ticket_alert: { labels: { severity: ticket } }   # burn rate lent → ticket

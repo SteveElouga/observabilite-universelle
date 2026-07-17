@@ -1,0 +1,6 @@
+# blackbox.yml — la vue « de l'extérieur » (§4.8) ; cibles déclarées dans prometheus.yml
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http: { fail_if_not_ssl: true, preferred_ip_protocol: ip4 }

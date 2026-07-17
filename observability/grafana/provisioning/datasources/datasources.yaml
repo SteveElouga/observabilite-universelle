@@ -1,0 +1,52 @@
+# grafana/provisioning/datasources/datasources.yaml — LE fichier de la corrélation (§10.5)
+# Câble la navigation métrique → trace → log → profil promise depuis le §1 du document.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      # MÉTRIQUE → TRACE : chaque exemplar devient un bouton "voir la trace"
+      exemplarTraceIdDestinations:
+        - { name: trace_id, datasourceUid: tempo }
+
+  - name: Loki
+    uid: loki
+    type: loki
+    url: http://loki:3100
+    jsonData:
+      # LOG → TRACE : le trace_id du JSON (§10.1) devient un lien cliquable
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id":"(\w+)"'
+          url: '$${__value.raw}'          # $$ = échappement du provisioning Grafana
+          datasourceUid: tempo
+          urlDisplayLabel: "Voir la trace"
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    url: http://tempo:3200
+    jsonData:
+      # TRACE → LOGS : bouton "logs de ce span" (fenêtre ±5 min, filtrée par trace_id)
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+      # TRACE → CARTE DES SERVICES : nourrie par les connecteurs du Collector (§10.3)
+      serviceMap: { datasourceUid: prometheus }
+      nodeGraph: { enabled: true }
+      lokiSearch: { datasourceUid: loki }
+      # TRACE → PROFIL : bouton "profil de ce span" (requiert le SDK Pyroscope, §10.1)
+      tracesToProfiles:
+        datasourceUid: pyroscope
+        profileTypeId: "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+
+  - name: Pyroscope
+    uid: pyroscope
+    type: grafana-pyroscope-datasource
+    url: http://pyroscope:4040

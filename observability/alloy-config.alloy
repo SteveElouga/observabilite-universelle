@@ -1,0 +1,47 @@
+// alloy-config.alloy — 2 rôles : logs des conteneurs Docker → Loki, et récepteur Faro (RUM web).
+// Les traces Faro passent par le COLLECTOR (règle §3 : tout transite par lui) :
+// elles bénéficient ainsi du tail sampling et des métriques dérivées (§10.3).
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Sans relabel, les flux Loki n'auraient aucun sélecteur exploitable :
+// on promeut le nom du conteneur en label `container` (faible cardinalité).
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "apps" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.write.default.receiver]
+}
+
+faro.receiver "web" {
+  server {
+    listen_address       = "0.0.0.0"
+    listen_port          = 12347
+    cors_allowed_origins = ["*"]          // à restreindre au domaine du front en prod (§7.4)
+  }
+  output {
+    logs   = [loki.write.default.receiver]
+    traces = [otelcol.exporter.otlp.collector.input]
+  }
+}
+
+loki.write "default" {
+  endpoint { url = "http://loki:3100/loki/api/v1/push" }
+}
+
+otelcol.exporter.otlp "collector" {
+  client {
+    endpoint = "otel-collector:4317"
+    tls { insecure = true }
+  }
+}
