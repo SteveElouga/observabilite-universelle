@@ -1,0 +1,81 @@
+# otel-collector-config.yaml — le point de contrôle central (§3, §10.3)
+# Réception OTLP → nettoyage → métriques dérivées des spans (AVANT échantillonnage)
+# → échantillonnage tail-based → routage vers les backends.
+
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+processors:
+  memory_limiter: { check_interval: 1s, limit_mib: 512 }
+
+  # Enrichissement commun (labels disciplinés, §3.5)
+  resource:
+    attributes:
+      - { key: deployment.environment, value: "${env:DEPLOY_ENV}", action: upsert }
+
+  # Hygiène : jeter le bruit et les données sensibles AVANT stockage
+  filter/drop_noise:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/health/"'    # adapter à vos routes
+        - 'attributes["http.route"] == "/ready/"'
+  attributes/redact:
+    actions:
+      - { key: http.request.header.authorization, action: delete }
+      - { key: enduser.id, action: hash }
+
+  # Échantillonnage tail-based (§7.3) : 100 % des erreurs et des lentes, 10 % du reste
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - { name: errors,  type: status_code,  status_code: { status_codes: [ERROR] } }
+      - { name: slow,    type: latency,      latency: { threshold_ms: 500 } }
+      - { name: baseline, type: probabilistic, probabilistic: { sampling_percentage: 10 } }
+
+  batch: { timeout: 5s }
+
+# Métriques dérivées des spans — calculées sur 100 % du trafic, AVANT le tail sampling
+connectors:
+  spanmetrics: {}      # RED (débit/erreurs/latence) par service & route, sans instrumentation métrique
+  servicegraph: {}     # nourrit la carte des services de Grafana (écran 0)
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls: { insecure: true }
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write   # Mimir à l'échelle (§7.2)
+    resource_to_telemetry_conversion: { enabled: true }
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp                 # ingestion OTLP native de Loki 3
+
+service:
+  telemetry:
+    metrics:                     # santé du Collector, scrapée par Prometheus (écran 12, §10.4)
+      readers:                   # par défaut le Collector n'écoute que sur localhost → on ouvre 0.0.0.0
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces/derive:                                   # ① 100 % des spans → métriques dérivées (PAS d'échantillonnage ici)
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, filter/drop_noise, attributes/redact]
+      exporters:  [spanmetrics, servicegraph]
+    traces/store:                                    # ② échantillonnage tail-based, PUIS stockage dans Tempo
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, filter/drop_noise, attributes/redact, tail_sampling, batch]
+      exporters:  [otlp/tempo]
+    metrics:
+      receivers:  [otlp, spanmetrics, servicegraph]  # métriques SDK + métriques dérivées des spans
+      processors: [memory_limiter, resource, batch]
+      exporters:  [prometheusremotewrite]
+    logs:                                            # utilisé surtout en K8s ;
+      receivers:  [otlp]                             # en compose, les logs passent par Alloy (§10.4)
+      processors: [memory_limiter, resource, batch]
+      exporters:  [otlphttp/loki]

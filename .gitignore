@@ -2,6 +2,11 @@
 .env
 *.env
 !.env.example
+observability/alertmanager/secrets/*
+!observability/alertmanager/secrets/*.example
+
+# --- Artefacts générés (à régénérer, pas à versionner à la main) ---
+observability/prometheus/rules/rules-slo.yml
 
 # --- Données & volumes locaux de la stack ---
 observability/**/data/
