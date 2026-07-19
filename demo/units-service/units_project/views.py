@@ -53,3 +53,13 @@ def creer_commande(request):
     return JsonResponse(
         {"resultat": "commande créée", "mode_paiement": mode, "user_id": user_id}
     )
+
+
+def erreur(request):
+    """Retourne un 500 volontaire : le span est marqué en erreur (status ERROR),
+    ce qui alimente les métriques RED et fait monter le taux d'erreur -> alerte (§10.6).
+    Sert à tester le déclenchement des alertes et du budget d'erreur SLO."""
+    logger.error("erreur simulée pour tester les alertes RED/SLO")
+    return JsonResponse(
+        {"erreur": "500 simulée pour tester les alertes RED/SLO"}, status=500
+    )

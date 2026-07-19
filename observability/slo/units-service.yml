@@ -2,6 +2,7 @@
 # Génération des règles multi-burn-rate + alertes :
 #   sloth generate -i slo/units-service.yml -o prometheus/rules/rules-slo.yml
 # (rules-slo.yml est un ARTEFACT GÉNÉRÉ — le régénérer, ne pas l'éditer à la main.)
+# SLI basé sur les spanmetrics du Collector (§10.3) : bad = spans en erreur, total = tous les spans.
 version: prometheus/v1
 service: units-service
 slos:
@@ -9,8 +10,8 @@ slos:
     objective: 99.9                      # → budget d'erreur : 43 min / 30 jours
     sli:
       events:
-        error_query: sum(rate(http_server_request_duration_seconds_count{service_name="units-service",http_response_status_code=~"5.."}[{{.window}}]))
-        total_query: sum(rate(http_server_request_duration_seconds_count{service_name="units-service"}[{{.window}}]))
+        error_query: sum(rate(traces_span_metrics_calls_total{service_name="units-service",status_code="STATUS_CODE_ERROR"}[{{.window}}]))
+        total_query: sum(rate(traces_span_metrics_calls_total{service_name="units-service"}[{{.window}}]))
     alerting:
       name: UnitsServiceAvailability
       page_alert:   { labels: { severity: page } }     # burn rate rapide → réveil
