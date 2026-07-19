@@ -4,7 +4,12 @@
 # Activer en plus le metrics_generator de Tempo ferait double emploi (double comptage).
 server: { http_listen_port: 3200 }
 distributor:
-  receivers: { otlp: { protocols: { grpc: {}, http: {} } } }
+  # endpoint explicite en 0.0.0.0 : Tempo 2.7+ écoute sinon sur localhost (injoignable inter-conteneurs)
+  receivers:
+    otlp:
+      protocols:
+        grpc: { endpoint: 0.0.0.0:4317 }
+        http: { endpoint: 0.0.0.0:4318 }
 storage:
   trace:
     backend: local
