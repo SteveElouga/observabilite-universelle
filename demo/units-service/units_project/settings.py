@@ -9,6 +9,13 @@ passe par les variables d'environnement et le wrapper « opentelemetry-instrumen
 import os
 from pathlib import Path
 
+# python-json-logger a réorganisé son module en 3.1 : on gère les deux emplacements
+# pour être robuste à la version installée.
+try:
+    from pythonjsonlogger.json import JsonFormatter  # python-json-logger >= 3.1
+except ImportError:  # versions < 3.1
+    from pythonjsonlogger.jsonlogger import JsonFormatter
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("UNITS_SECRET_KEY", "demo-insecure-key-change-me")
@@ -48,7 +55,7 @@ LOGGING = {
     },
     "formatters": {
         "json": {
-            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "()": JsonFormatter,
             "format": "%(asctime)s %(levelname)s %(name)s %(message)s %(trace_id)s %(span_id)s",
         },
     },

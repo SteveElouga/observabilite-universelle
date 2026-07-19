@@ -24,6 +24,7 @@ services:
     profiles: ["demo"]
     build: { context: ../demo/units-service }
     environment:
+      DJANGO_SETTINGS_MODULE: units_project.settings   # requis dans l'env AVANT opentelemetry-instrument, sinon Django charge des settings vides
       OTEL_SERVICE_NAME: units-service
       OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=demo,service.namespace=demo,service.version=0.1.0"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317   # jamais les backends en direct (§3)
