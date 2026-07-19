@@ -5,7 +5,7 @@
 ## État courant *(à maintenir à jour à chaque session)*
 
 - **Étape** : socle + **correctifs de recette committés** sur `feature/observability-socle` (backlog #1 ✅, #2 entamé — 5 commits). **Guide d'utilisation** de la plateforme rédigé sur `docs/guide-utilisation-observabilite`. Gouvernance en place, hooks actifs.
-- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle + 2 correctifs (récepteur Tempo, node-exporter) ; `docs/guide-utilisation-observabilite` (créée depuis `develop`) porte le guide. **Les 4 branches sont publiées sur le remote.**
+- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle + 2 correctifs (récepteur Tempo, node-exporter) ; `docs/guide-utilisation-observabilite` (créée depuis `develop`) porte le guide. **`main`, `develop` et `docs/…` sont sur le remote ; `feature/observability-socle` a été réécrite (secret Slack retiré du `.example`) et reste à (re)pousser.**
 - **Prochaine action** : activer les protections R8 (`main`/`develop`), puis ouvrir les 2 MR ciblant `develop` (socle d'abord ; guide ensuite, après rebase R5). NB : pas encore de CI dans le dépôt, donc l'exigence « CI verte » de R8 est à activer le jour où une CI existera.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
@@ -35,6 +35,12 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-19 — Session Claude : incident secret (push protection GitHub) + réécriture d'historique
+- **Correction de l'entrée précédente** : seules `main`, `develop` et `docs/guide-utilisation-observabilite` ont été acceptées par le remote. Le push de `feature/observability-socle` a été **refusé par la protection anti-secrets de GitHub** : une URL de webhook Slack figurait dans `observability/alertmanager/secrets/slack_webhook_url.example` (introduite au commit socle). Un placeholder au format d'un webhook, pas un secret réel avéré, mais un `.example` ne doit jamais contenir d'URL qui matche le motif.
+- **Correctif** : `.example` remplacé par un placeholder neutre (aucune URL `hooks.slack.com/...`), puis **historique de la branche réécrit** (rebase interactif éditant le commit socle) pour purger le motif. Vérifié : 0 occurrence dans l'arbre et dans tous les diffs de la branche. La branche n'ayant jamais été acceptée par le remote, aucun force-push nécessaire.
+- **À faire** : `git push origin feature/observability-socle` (nouveau, propre), puis les 2 MR vers `develop`.
+- **Reco gouvernance** : le hook `pre-commit` ne scanne pas les secrets (il ne protège que `main`/`develop`). Ajouter une détection de secrets (gitleaks / pre-commit) serait un bon enabler pour attraper ça localement, avant GitHub.
 
 ### 2026-07-19 — Session Claude : publication GitHub (remote + push des 4 branches)
 - Remote `origin` posé sur le dépôt parent : `github.com/SteveElouga/observabilite-universelle` (privé).
