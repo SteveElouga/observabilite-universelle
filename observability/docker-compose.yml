@@ -35,6 +35,15 @@ services:
     ports: ["8088:8000"]               # 8000 est déjà pris par GlitchTip
     depends_on: [otel-collector]
 
+  # ---- DÉMO (profil "demo") : frontend Angular instrumenté Faro + GlitchTip (§10.2) ----
+  # nginx sert l'app et proxifie /api vers units-service (même origine -> traceparent transmis,
+  # la trace navigateur et la trace Django ne font qu'une). Faro poste direct sur alloy:12347 (CORS ouvert).
+  mir-webapp:
+    profiles: ["demo"]
+    build: { context: ../demo/mir-webapp }
+    ports: ["8090:80"]
+    depends_on: [units-service, alloy]
+
   prometheus:
     image: prom/prometheus:v3.1.0
     command:

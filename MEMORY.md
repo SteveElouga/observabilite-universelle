@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : socle (#1) et guide mergés dans `develop` (`88d14de`). **Backlog #3 (démo Django `units-service`) terminé et recette validée** sur `feature/otel-django` : métrique dans Prometheus, logs JSON avec `trace_id` dans Loki, corrélation OK. Prêt pour la MR.
-- **Branches** : `develop` = `88d14de` ; `main` au bootstrap. `feature/otel-django` porte la démo `units-service` (feat + fix), recette OK, à pousser + MR.
-- **Prochaine action** : pousser `feature/otel-django` et ouvrir la MR → `develop`. Ensuite backlog #4 (frontend Angular Faro). Toujours pas de CI (R8 « CI verte » à activer plus tard) ; reco enabler détection de secrets (gitleaks).
+- **Étape** : socle (#1) et guide dans `develop` (`88d14de`). #3 (`units-service`) terminé sur `feature/otel-django` (recette OK). **#4 (frontend Angular `mir-webapp`, Faro + GlitchTip) construit** sur `feature/faro-angular`, reste à valider sur le Mac (compilation Angular).
+- **Branches** : `develop` = `88d14de`. `feature/otel-django` = démo `units-service` (recette OK, à MR). `feature/faro-angular` = démo `mir-webapp`, **créée depuis `feature/otel-django`** (dépend de units-service), à rebaser sur `develop` après le merge de #3.
+- **Prochaine action** : (1) pousser + MR `feature/otel-django` (#3) ; (2) recette Angular de `mir-webapp` sur le Mac (`npm install` + build/Docker), puis rebaser `feature/faro-angular` sur `develop` (`git rebase --onto develop feature/otel-django feature/faro-angular`) et MR. Pas de CI (R8 « CI verte » plus tard) ; reco enabler gitleaks.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -18,7 +18,7 @@
 | 1 | ✅ **Fait (17/07/2026)** — Socle mono-serveur : arborescence `observability/` complète (compose LGT + Pyroscope + GlitchTip + Uptime Kuma, configs Collector/Prometheus/Loki/Tempo, datasources corrélées, règles RED, SLO Sloth, Alertmanager, blackbox, k6, `.env.example`). Committé, en attente de MR. | `feature/observability-socle` | §10.3–§10.7 |
 | 2 | Démarrage & recette : `.env` réel (jamais commité), secret Slack (`alertmanager/secrets/`), `docker compose up`, vérifications §10.9 étapes 1–5 (corrélation aller-retour, exemplars) | *(même branche que #1 ou `fix/…`)* | §10.9 |
 | 3 | ✅ **Fait (19/07/2026)** — Instrumentation Django `units-service` (`demo/units-service/`, profil compose `demo`). Recette validée dans Grafana : métrique `commandes_creees_total` (Prometheus), logs JSON avec `trace_id` (Loki), traces (Tempo). Correctif clé : `DJANGO_SETTINGS_MODULE` en env (avant `opentelemetry-instrument`). | `feature/otel-django` | §10.1 |
-| 4 | Frontend Angular `mir-webapp` : Faro (RUM + traces) + GlitchTip (erreurs) | `feature/faro-angular` | §10.2 |
+| 4 | 🔄 **En cours** — Frontend Angular `mir-webapp` (`demo/mir-webapp/`) : Faro (RUM + traces, propagation W3C) + GlitchTip via `@sentry/angular`. nginx proxifie `/api` vers units-service (anti-CORS). Profil compose `demo`, port 8090. **Recette Angular à faire sur le Mac** (npm bloqué en préparation). Branche depuis `feature/otel-django` (dépend de #3). | `feature/faro-angular` | §10.2 |
 | 5 | Alerting réel : webhook Slack, règles RED actives, SLO Sloth généré (`sloth generate`) | `feature/alerting-slo` | §10.6 |
 | 6 | Sondes externes : Uptime Kuma configuré (hébergé hors infra), Blackbox ciblé, k6 en CI | `feature/uptime-externe` | §10.7, §7.5 |
 | 7 | Phase 4 — astreinte : OneUptime (machine séparée) + receiver webhook Alertmanager | `feature/oneuptime` | §4.11, §10.6 |
@@ -35,6 +35,12 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-19 — Session Claude : backlog #4 — frontend Angular mir-webapp (Faro + GlitchTip)
+- Création de `demo/mir-webapp/` : app Angular 18 (standalone) instrumentée §10.2. Faro Web SDK (Web Vitals, erreurs JS, `TracingInstrumentation` avec propagation W3C) + GlitchTip via `@sentry/angular` (initialisé seulement si un DSN est fourni). Composant démo : bouton « appeler le backend » (trace propagée) + bouton « erreur JS ».
+- Config Angular modelée sur celle, éprouvée, du frontend Formuloo (builder `application`, tsconfig ES2022). Dockerfile multi-stage (build Node → nginx). nginx sert l'app et **proxifie `/api` vers `units-service`** (même origine, pas de CORS, `traceparent` transmis) ; Faro poste direct sur `alloy:12347` (CORS ouvert côté Alloy). Compose : profil `demo`, port hôte 8090.
+- **Dépendance #4 → #3** : branche `feature/faro-angular` créée depuis `feature/otel-django` (pas `develop`, qui n'a pas encore units-service). À rebaser après le merge de #3 : `git rebase --onto develop feature/otel-django feature/faro-angular`.
+- **Non validé en préparation** : proxy bloque npm, donc pas de compilation Angular ici. Recette (`npm install` + build Docker) à faire sur le Mac ; itération probable comme pour units-service (scaffold Angular à la main).
 
 ### 2026-07-19 — Session Claude : recette de la démo units-service (backlog #3 validé)
 - Recette Docker sur le Mac (`docker compose --profile demo up -d --build`). Deux bugs trouvés et corrigés (commit `fix(demo)`) :
