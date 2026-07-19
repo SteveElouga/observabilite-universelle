@@ -6,4 +6,5 @@ from units_project import views
 urlpatterns = [
     path("sante/", views.sante, name="sante"),
     path("demo/commande", views.creer_commande, name="creer_commande"),
+    path("demo/erreur", views.erreur, name="erreur"),
 ]

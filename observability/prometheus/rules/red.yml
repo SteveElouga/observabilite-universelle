@@ -1,21 +1,24 @@
 # prometheus/rules/red.yml — alertes sur les SYMPTÔMES utilisateur (méthode RED, §10.6)
-# Noms de métriques OTel (SDK, non échantillonnées) ; adaptez aux vôtres.
+# Basé sur les métriques dérivées des spans par le Collector (connecteur spanmetrics, §10.3),
+# calculées sur 100 % du trafic AVANT échantillonnage :
+#   traces_span_metrics_calls_total                  -> débit et erreurs (label status_code)
+#   traces_span_metrics_duration_milliseconds_bucket -> latence (en millisecondes)
 groups:
   - name: service-red
     rules:
       - alert: HighErrorRate
         expr: |
-          sum by (service_name) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+          sum by (service_name) (rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m]))
           /
-          sum by (service_name) (rate(http_server_request_duration_seconds_count[5m])) > 0.05
+          sum by (service_name) (rate(traces_span_metrics_calls_total[5m])) > 0.05
         for: 5m
         labels: { severity: page }
         annotations:
-          summary: "{{ $labels.service_name }} : {{ $value | humanizePercentage }} d'erreurs 5xx"
+          summary: "{{ $labels.service_name }} : {{ $value | humanizePercentage }} de spans en erreur"
       - alert: HighLatencyP99
         expr: |
           histogram_quantile(0.99, sum by (le, service_name)
-            (rate(http_server_request_duration_seconds_bucket[5m]))) > 0.5
+            (rate(traces_span_metrics_duration_milliseconds_bucket[5m]))) > 500
         for: 10m
         labels: { severity: ticket }
         annotations:
