@@ -1,0 +1,6 @@
+# Dépendances épinglées (ADR versions figées). Instrumentation : §10.1 du document maître.
+Django==5.1.4
+gunicorn==23.0.0
+opentelemetry-distro==0.50b0
+opentelemetry-exporter-otlp==1.29.0
+python-json-logger==3.2.1
