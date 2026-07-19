@@ -68,7 +68,7 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.8.2
     pid: host
-    volumes: ["/:/host:ro,rslave"]
+    volumes: ["/:/host:ro"]                   # sans "rslave" : Docker Desktop (Mac/Win) n'a pas de mount slave sur /
     command: ["--path.rootfs=/host"]
 
   blackbox-exporter:
