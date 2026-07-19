@@ -5,9 +5,9 @@
 ## État courant *(à maintenir à jour à chaque session)*
 
 - **Étape** : socle + **correctifs de recette committés** sur `feature/observability-socle` (backlog #1 ✅, #2 entamé — 5 commits). **Guide d'utilisation** de la plateforme rédigé sur `docs/guide-utilisation-observabilite`. Gouvernance en place, hooks actifs.
-- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle + 2 correctifs (récepteur Tempo, node-exporter), **prête pour la MR → `develop`** (checklist R10) ; `docs/guide-utilisation-observabilite` (créée depuis `develop`) porte le guide, prête pour sa propre MR. Les MR partent dès que le remote GitHub existera.
-- **Prochaine action** : recette locale du socle (backlog #2 : `.env`, secret Slack, `docker compose up`, vérifications §10.9 étapes 1–5) — puis création du remote GitHub (« Première publication », README.md) + protections R8, et ouverture de la MR du socle.
-- **Remote GitHub** : **pas encore configuré.**
+- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle + 2 correctifs (récepteur Tempo, node-exporter) ; `docs/guide-utilisation-observabilite` (créée depuis `develop`) porte le guide. **Les 4 branches sont publiées sur le remote.**
+- **Prochaine action** : activer les protections R8 (`main`/`develop`), puis ouvrir les 2 MR ciblant `develop` (socle d'abord ; guide ensuite, après rebase R5). NB : pas encore de CI dans le dépôt, donc l'exigence « CI verte » de R8 est à activer le jour où une CI existera.
+- **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
 
@@ -35,6 +35,12 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-19 — Session Claude : publication GitHub (remote + push des 4 branches)
+- Remote `origin` posé sur le dépôt parent : `github.com/SteveElouga/observabilite-universelle` (privé).
+- **4 branches poussées** : `main`, `develop`, `feature/observability-socle`, `docs/guide-utilisation-observabilite`. Le hook `pre-push` a bien toléré la création initiale de `develop`.
+- Incident corrigé : un `git` lancé par erreur depuis `observability/` y avait créé un dépôt imbriqué vide (branche `master`, aucun commit) qui captait les commandes, d'où « src refspec main does not match any ». `observability/.git` retiré, `observability/` de nouveau suivi par le parent (15 fichiers), remote reposé au bon niveau.
+- Reste : protections R8 sur GitHub, puis les 2 MR vers `develop`. Descriptions de MR et checklist R10 préparées.
 
 ### 2026-07-19 — Session Claude : correctifs de recette + guide d'utilisation
 - Recette du socle (backlog #2) sur le Mac : deux correctifs d'exécutabilité corrigés et commités (`fix(observability)` `8f87d49`) sur `feature/observability-socle`.
