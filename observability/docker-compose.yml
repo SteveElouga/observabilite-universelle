@@ -17,6 +17,23 @@ services:
     ports: ["4317:4317", "4318:4318"]        # OTLP gRPC / HTTP (vos apps pointent ici, jamais les backends)
     depends_on: [tempo, loki, prometheus]
 
+  # ---- DÉMO (profil "demo", opt-in) : app Django instrumentée (§10.1) ----
+  # Émet réellement traces + métriques + logs vers le Collector, pour valider la plateforme
+  # de bout en bout. Ne tourne QUE si le profil est activé : docker compose --profile demo up.
+  units-service:
+    profiles: ["demo"]
+    build: { context: ../demo/units-service }
+    environment:
+      OTEL_SERVICE_NAME: units-service
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=demo,service.namespace=demo,service.version=0.1.0"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317   # jamais les backends en direct (§3)
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: none          # les logs partent en stdout JSON, récupérés par Alloy
+      UNITS_SECRET_KEY: ${UNITS_SECRET_KEY:-demo-insecure-change-me}
+    ports: ["8088:8000"]               # 8000 est déjà pris par GlitchTip
+    depends_on: [otel-collector]
+
   prometheus:
     image: prom/prometheus:v3.1.0
     command:

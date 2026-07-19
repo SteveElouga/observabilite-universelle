@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : socle + **correctifs de recette committés** sur `feature/observability-socle` (backlog #1 ✅, #2 entamé — 5 commits). **Guide d'utilisation** de la plateforme rédigé sur `docs/guide-utilisation-observabilite`. Gouvernance en place, hooks actifs.
-- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle + 2 correctifs (récepteur Tempo, node-exporter) ; `docs/guide-utilisation-observabilite` (créée depuis `develop`) porte le guide. **`main`, `develop` et `docs/…` sont sur le remote ; `feature/observability-socle` a été réécrite (secret Slack retiré du `.example`) et reste à (re)pousser.**
-- **Prochaine action** : activer les protections R8 (`main`/`develop`), puis ouvrir les 2 MR ciblant `develop` (socle d'abord ; guide ensuite, après rebase R5). NB : pas encore de CI dans le dépôt, donc l'exigence « CI verte » de R8 est à activer le jour où une CI existera.
+- **Étape** : **socle (backlog #1) et guide mergés dans `develop`** (`88d14de`) via 2 MR. Backlog #3 (instrumentation Django `units-service`) **en cours** sur `feature/otel-django`.
+- **Branches** : `develop` = `88d14de` (socle + correctifs + guide, aucun secret) ; `main` au bootstrap `a28ca38`. Branches #1 et guide fusionnées (supprimables). Travail courant : `feature/otel-django` (démo `units-service`, depuis `develop`).
+- **Prochaine action** : recette Docker de la démo sur le Mac (`docker compose --profile demo up -d --build`, générer du trafic sur `:8088/demo/commande`, vérifier traces/métriques/logs corrélés dans Grafana), puis MR `feature/otel-django` → `develop`. Toujours pas de CI (exigence R8 « CI verte » à activer plus tard). Reco : enabler détection de secrets (gitleaks).
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -17,7 +17,7 @@
 |---|---|---|---|
 | 1 | ✅ **Fait (17/07/2026)** — Socle mono-serveur : arborescence `observability/` complète (compose LGT + Pyroscope + GlitchTip + Uptime Kuma, configs Collector/Prometheus/Loki/Tempo, datasources corrélées, règles RED, SLO Sloth, Alertmanager, blackbox, k6, `.env.example`). Committé, en attente de MR. | `feature/observability-socle` | §10.3–§10.7 |
 | 2 | Démarrage & recette : `.env` réel (jamais commité), secret Slack (`alertmanager/secrets/`), `docker compose up`, vérifications §10.9 étapes 1–5 (corrélation aller-retour, exemplars) | *(même branche que #1 ou `fix/…`)* | §10.9 |
-| 3 | Instrumentation Django `units-service` (auto-instr. OTel, logs JSON + trace_id, métrique métier) | `feature/otel-django` | §10.1 |
+| 3 | 🔄 **En cours** — Instrumentation Django `units-service` : service `demo/units-service/` (auto-instr. OTel, logs JSON + trace_id, métrique `commandes_creees_total`, Dockerfile non-root, profil compose `demo`). Recette Docker à faire sur le Mac. | `feature/otel-django` | §10.1 |
 | 4 | Frontend Angular `mir-webapp` : Faro (RUM + traces) + GlitchTip (erreurs) | `feature/faro-angular` | §10.2 |
 | 5 | Alerting réel : webhook Slack, règles RED actives, SLO Sloth généré (`sloth generate`) | `feature/alerting-slo` | §10.6 |
 | 6 | Sondes externes : Uptime Kuma configuré (hébergé hors infra), Blackbox ciblé, k6 en CI | `feature/uptime-externe` | §10.7, §7.5 |
@@ -35,6 +35,15 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-19 — Session Claude : backlog #3 — démo Django units-service instrumentée
+- Socle et guide **mergés dans `develop`** (`88d14de`) via les 2 MR ; `develop` contient tout (observability/, docs/), aucun secret. Backlog #1 terminé.
+- **Backlog #3 démarré** sur `feature/otel-django` (depuis `develop`). Création de `demo/units-service/` : projet Django `units_project` instrumenté §10.1, sans aucune ligne d'instrumentation dans le code applicatif (tout par env + `opentelemetry-instrument`).
+  - Endpoints `/sante/` et `/demo/commande` ; ce dernier émet les 3 signaux : trace auto, métrique `commandes_creees_total` (labels à faible cardinalité), `user.id` en attribut de span, log JSON avec `trace_id`.
+  - `TraceContextFilter`, config LOGGING JSON, `requirements.txt` épinglé, `Dockerfile` multi-stage non-root avec `opentelemetry-bootstrap`, `gunicorn.conf.py`, README.
+  - Branché au compose sous **profil `demo`** (opt-in), OTLP vers `otel-collector:4317`, port hôte `8088` (8000 pris par GlitchTip). `.env.example` complété (`UNITS_SECRET_KEY`).
+- **Validation** : syntaxe Python OK (`py_compile`). La validation runtime (`manage.py check`, `docker compose --profile demo up`, télémétrie visible dans Grafana) est **à faire sur le Mac** : le bac à sable n'a ni Docker ni accès PyPI (proxy 403).
+- **Choix actés** (questionnaire) : démo lançable branchée sur la pile, emplacement `demo/`, profil `demo` opt-in — pour valider la plateforme de bout en bout en gardant le cœur propre.
 
 ### 2026-07-19 — Session Claude : incident secret (push protection GitHub) + réécriture d'historique
 - **Correction de l'entrée précédente** : seules `main`, `develop` et `docs/guide-utilisation-observabilite` ont été acceptées par le remote. Le push de `feature/observability-socle` a été **refusé par la protection anti-secrets de GitHub** : une URL de webhook Slack figurait dans `observability/alertmanager/secrets/slack_webhook_url.example` (introduite au commit socle). Un placeholder au format d'un webhook, pas un secret réel avéré, mais un `.example` ne doit jamais contenir d'URL qui matche le motif.
