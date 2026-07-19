@@ -4,8 +4,8 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **socle implémenté et committé** sur `feature/observability-socle` (backlog #1 ✅ — 3 commits : chore/feat/docs). Gouvernance en place, hooks actifs et testés.
-- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle — **prête pour la MR → `develop`** (checklist R10) dès que le remote GitHub existera.
+- **Étape** : socle + **correctifs de recette committés** sur `feature/observability-socle` (backlog #1 ✅, #2 entamé — 5 commits). **Guide d'utilisation** de la plateforme rédigé sur `docs/guide-utilisation-observabilite`. Gouvernance en place, hooks actifs.
+- **Branches** : `main` et `develop` figées sur le bootstrap `a28ca38` ; `feature/observability-socle` porte le socle + 2 correctifs (récepteur Tempo, node-exporter), **prête pour la MR → `develop`** (checklist R10) ; `docs/guide-utilisation-observabilite` (créée depuis `develop`) porte le guide, prête pour sa propre MR. Les MR partent dès que le remote GitHub existera.
 - **Prochaine action** : recette locale du socle (backlog #2 : `.env`, secret Slack, `docker compose up`, vérifications §10.9 étapes 1–5) — puis création du remote GitHub (« Première publication », README.md) + protections R8, et ouverture de la MR du socle.
 - **Remote GitHub** : **pas encore configuré.**
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
@@ -35,6 +35,15 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-19 — Session Claude : correctifs de recette + guide d'utilisation
+- Recette du socle (backlog #2) sur le Mac : deux correctifs d'exécutabilité corrigés et commités (`fix(observability)` `8f87d49`) sur `feature/observability-socle`.
+  - `node-exporter` : retrait de la propagation `rslave` sur le montage `/` (incompatible Docker Desktop Mac/Win : « path / is mounted ... not a shared or slave mount »).
+  - `tempo` : récepteur OTLP forcé sur `0.0.0.0:4317/4318` (Tempo 2.7 écoute sinon sur `localhost`, d'où le « connection refused » du Collector vers `tempo:4317`).
+  - Chaîne validée de bout en bout : trace de fumée (curl OTLP) → Collector → tail sampling → Tempo → Grafana, corrélation OK. La trace de démonstration est marquée en erreur et lente pour passer l'échantillonnage.
+- Nouveau **guide d'utilisation de la plateforme** (`docs/Guide_Utilisation_Plateforme_Observabilite.md`, commit `66358a6`) sur sa propre branche `docs/guide-utilisation-observabilite` créée depuis `develop` (R1). Référence d'intégration façon API pour tout projet consommateur : prérequis, concepts, chaque technologie justifiée (rôle, place, choix, fonctionnement), points d'entrée, trois méthodes de branchement (reco : réseau Docker partagé en local, endpoint stable derrière proxy à l'échelle), cloisonnement par projet (`X-Scope-OrgID` / Mimir), évolutions futures. Dossier `docs/` dédié.
+- **Intégration dans `develop` volontairement NON faite** : R2/R4/R6 imposent une MR, impossible tant que le remote GitHub n'existe pas. Aucune fusion directe. Les deux branches sont prêtes pour leurs MR respectives.
+- Rappel recette macOS : accorder à Docker l'accès disque à `~/Documents` (sinon « operation not permitted »), ou lancer la pile hors dossier protégé.
 
 ### 2026-07-17 — Session Claude : implémentation du socle observability/ (backlog #1)
 - Transcription exécutable de la §10 sur `feature/observability-socle` : 15 fichiers (compose 16 services, Collector avec connecteurs avant tail sampling, datasources de corrélation, RED, SLO Sloth, blackbox, k6, `.env.example`, README du socle).
