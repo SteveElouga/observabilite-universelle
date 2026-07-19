@@ -27,7 +27,7 @@ Puis ouvrez http://localhost:8090 et cliquez sur les deux boutons.
 | Signal | Où | Quoi |
 |---|---|---|
 | Trace de bout en bout | Explore, source Tempo | Après « Appeler le backend » : une trace unique du navigateur (`mir-webapp`) jusqu'à `units-service` |
-| Expérience réelle et erreurs | Explore, source Loki | Les événements Faro : Web Vitals, et l'erreur JS après le second bouton |
+| Expérience réelle et erreurs | Explore, source Loki, requête `{source="faro"}` | Les événements Faro : Web Vitals, et l'erreur JS après le second bouton |
 | Erreurs (optionnel) | GlitchTip (`:8000`) | L'erreur JS regroupée, si un DSN est configuré |
 
 ## Choix techniques
