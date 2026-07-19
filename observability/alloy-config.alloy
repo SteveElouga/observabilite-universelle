@@ -30,9 +30,19 @@ faro.receiver "web" {
     cors_allowed_origins = ["*"]          // à restreindre au domaine du front en prod (§7.4)
   }
   output {
-    logs   = [loki.write.default.receiver]
+    logs   = [loki.process.faro.receiver]   // passe par un étage qui pose un label filtrable
     traces = [otelcol.exporter.otlp.collector.input]
   }
+}
+
+// Les événements RUM de Faro n'ont pas les labels `container`/`service_name` des logs Docker.
+// On leur pose un label `source="faro"` : ils deviennent filtrables dans Loki via {source="faro"}
+// (et cela garantit au moins un label, un flux sans label pouvant être rejeté).
+loki.process "faro" {
+  stage.static_labels {
+    values = { source = "faro" }
+  }
+  forward_to = [loki.write.default.receiver]
 }
 
 loki.write "default" {
