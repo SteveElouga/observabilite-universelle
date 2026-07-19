@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1 socle, #3 units-service, #4 mir-webapp mergés dans `develop`** (`3892fc8`), recettes validées dans Grafana. **#5 (alerting réel + SLO) en cours** sur `feature/alerting-slo`.
-- **Branches** : `develop` = `3892fc8` (socle + guide + 2 démos). `main` au bootstrap. Travail courant : `feature/alerting-slo` (depuis `develop`).
-- **Prochaine action** : générer les règles SLO (`sloth generate`), recette d'alerting (déclencher `/demo/erreur`, voir l'alerte partir vers Slack), puis MR #5. Ensuite #6 (sondes externes). Pas de CI (R8 « CI verte » plus tard) ; reco enabler gitleaks.
+- **Étape** : **#1 socle, #3 units-service, #4 mir-webapp mergés dans `develop`** (`3892fc8`), recettes validées dans Grafana. **#5 (alerting réel + SLO) recette validée de bout en bout** (alerte reçue dans Slack) sur `feature/alerting-slo` ; reste la MR vers `develop`.
+- **Branches** : `develop` = `3892fc8` (socle + guide + 2 démos). `main` au bootstrap. Travail courant : `feature/alerting-slo` (depuis `develop`) — prête pour MR.
+- **Prochaine action** : pousser `feature/alerting-slo` + MR → `develop`. Ensuite #6 (sondes externes). Pas de CI (R8 « CI verte » plus tard) ; reco enabler gitleaks.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -19,7 +19,7 @@
 | 2 | Démarrage & recette : `.env` réel (jamais commité), secret Slack (`alertmanager/secrets/`), `docker compose up`, vérifications §10.9 étapes 1–5 (corrélation aller-retour, exemplars) | *(même branche que #1 ou `fix/…`)* | §10.9 |
 | 3 | ✅ **Fait (19/07/2026)** — Instrumentation Django `units-service` (`demo/units-service/`, profil compose `demo`). Recette validée dans Grafana : métrique `commandes_creees_total` (Prometheus), logs JSON avec `trace_id` (Loki), traces (Tempo). Correctif clé : `DJANGO_SETTINGS_MODULE` en env (avant `opentelemetry-instrument`). | `feature/otel-django` | §10.1 |
 | 4 | ✅ **Fait (19/07/2026)** — Frontend Angular `mir-webapp` (`demo/mir-webapp/`, profil `demo`, port 8090) : Faro (RUM Web Vitals + traces, propagation W3C) + erreurs via `ErrorHandler` Angular → `faro.api.pushError` (+ GlitchTip si DSN). nginx proxifie `/api` (anti-CORS). Recette validée : RUM et erreurs dans Loki (`{source="faro"}`), trace corrélée navigateur→`units-service` dans Tempo. Branche depuis `feature/otel-django` (dépend de #3). | `feature/faro-angular` | §10.2 |
-| 5 | 🔄 **En cours** — Alerting réel : règles RED et SLO **réalignés sur les spanmetrics** (`traces_span_metrics_calls_total` / `_duration_milliseconds`, car units-service émet `http_server_duration_milliseconds` et non `..._request_duration_seconds`). Endpoint `/demo/erreur` (500) ajouté à units-service pour tester. Reste : `sloth generate` + recette d'alerte vers Slack. | `feature/alerting-slo` | §10.6 |
+| 5 | ✅ **Fait (19/07/2026)** — Alerting réel : règles RED et SLO **réalignés sur les spanmetrics** (`traces_span_metrics_calls_total` / `_duration_milliseconds`, car units-service émet `http_server_duration_milliseconds` et non `..._request_duration_seconds`). Endpoint `/demo/erreur` (500) ajouté à units-service. **Recette validée de bout en bout** : `sloth generate` → règles chargées dans Prometheus (RED + SLO multi-burn-rate), erreurs provoquées → `HighErrorRate` Pending + `UnitsServiceAvailability` Firing → Alertmanager → **Slack `#alertes`**. Reste : MR vers `develop`. | `feature/alerting-slo` | §10.6 |
 | 6 | Sondes externes : Uptime Kuma configuré (hébergé hors infra), Blackbox ciblé, k6 en CI | `feature/uptime-externe` | §10.7, §7.5 |
 | 7 | Phase 4 — astreinte : OneUptime (machine séparée) + receiver webhook Alertmanager | `feature/oneuptime` | §4.11, §10.6 |
 | 8 | Phase 4 — profiling : SDK Pyroscope Django + lien trace→profil (`pyroscope-otel`) | `feature/pyroscope-sdk` | §10.1, §10.5 |
@@ -40,7 +40,10 @@
 - Branche `feature/alerting-slo` depuis `develop` (`3892fc8`, avec #1/#3/#4 mergés).
 - **Découverte** : units-service émet `http_server_duration_milliseconds` (pas `http_server_request_duration_seconds` du socle), plus les spanmetrics `traces_span_metrics_calls_total` / `_duration_milliseconds`. Les règles RED et SLO du socle n'auraient donc jamais eu de données.
 - **Correctif** : `red.yml` et `slo/units-service.yml` réécrits sur les **spanmetrics** (source RED canonique, §10.3) : erreurs via `status_code="STATUS_CODE_ERROR"`, latence via `traces_span_metrics_duration_milliseconds_bucket` (seuil en ms, pas en s). Endpoint `/demo/erreur` (HTTP 500 → span en erreur) ajouté à units-service pour tester.
-- **Reste (Mac)** : `sloth generate -i slo/units-service.yml -o prometheus/rules/rules-slo.yml`, recharger Prometheus, vérifier les alertes chargées, provoquer des erreurs et voir l'alerte partir vers Slack (le fichier secret `slack_webhook_url` existe déjà).
+- **Recette validée sur le Mac (bout en bout)** : `sloth generate -i slo/units-service.yml -o prometheus/rules/rules-slo.yml` (binaire sloth installé) → `docker compose restart prometheus`. Prometheus charge le groupe `service-red` (RED, red.yml) **et** `sloth-slo-alerts-units-service-requests-availability` (SLO multi-burn-rate, rules-slo.yml). Erreurs provoquées via `/demo/erreur` : `HighErrorRate` passe en **Pending** (100 % de spans en erreur, `for: 5m`) et `UnitsServiceAvailability` en **Firing** (burn rate à 100 % » budget 0,1 %, fenêtres courte et longue franchies d'emblée). L'alerte remonte à **Alertmanager** (receiver `slack`, labels Sloth) puis à **Slack `#alertes`** : `[FIRING:1] UnitsServiceAvailability`.
+- Détail SLO : l'alerte page Sloth exige les deux fenêtres (5m **et** 1h) au-dessus du seuil pour éviter les faux positifs ; à 100 % d'erreurs, les deux passent tout de suite, d'où un firing quasi immédiat. En dégradation réaliste (quelques %), elle serait plus lente que `HighErrorRate`.
+- `rules-slo.yml` reste un **artefact généré** (git-ignoré) : à régénérer par `sloth generate` sur chaque cible, jamais commité.
+- Reste : pousser `feature/alerting-slo` + MR → `develop`.
 
 ### 2026-07-19 — Session Claude : recette mir-webapp (backlog #4 validé)
 - Recette Docker de `mir-webapp` sur le Mac (`docker compose --profile demo up -d --build`). L'app Angular compile et tourne du premier build.
