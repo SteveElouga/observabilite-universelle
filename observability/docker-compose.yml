@@ -41,7 +41,7 @@ services:
   mir-webapp:
     profiles: ["demo"]
     build: { context: ../demo/mir-webapp }
-    ports: ["8090:80"]
+    ports: ["8090:8080"]               # nginx non-root écoute sur 8080 dans le conteneur
     depends_on: [units-service, alloy]
 
   prometheus:
