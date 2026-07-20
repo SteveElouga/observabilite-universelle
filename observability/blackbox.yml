@@ -1,5 +1,15 @@
 # blackbox.yml — la vue « de l'extérieur » (§4.8) ; cibles déclarées dans prometheus.yml
+# Deux modules : http_local pour les sondes internes en HTTP (plateforme et démo sur le
+# réseau Docker), http_2xx pour les cibles publiques en HTTPS (gabarit prod, exige un
+# certificat TLS valide). Le vrai point de vue externe reste Uptime Kuma hébergé hors infra
+# (uptime-kuma/README.md) : Blackbox sonde depuis l'intérieur du réseau, sans instrumentation.
 modules:
+  http_local:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4
+      valid_status_codes: []          # défaut : toute réponse 2xx est un succès
   http_2xx:
     prober: http
     timeout: 5s

@@ -10,12 +10,43 @@ scrape_configs:
     static_configs: [{ targets: ["node-exporter:9100"] }]
   - job_name: otel-collector           # santé du pipeline lui-même (écran 12)
     static_configs: [{ targets: ["otel-collector:8888"] }]
-  - job_name: blackbox                 # sondes externes (§10.7) — ← adaptez les cibles
+  # --- Sondes en boîte noire (§10.7 / §4.8) : Blackbox teste les endpoints en HTTP, sans
+  #     instrumentation, et complète la vue « boîte blanche » des métriques applicatives.
+  #     Le vrai point de vue hors infra reste Uptime Kuma (uptime-kuma/README.md).
+  - job_name: blackbox-platform        # surfaces toujours actives quand la pile tourne
     metrics_path: /probe
-    params: { module: [http_2xx] }
+    params: { module: [http_local] }
     static_configs:
-      - targets: ["https://app.example.com/health", "https://api.example.com/health"]
+      - targets:
+          - http://grafana:3000/api/health
+          - http://prometheus:9090/-/healthy
+          - http://loki:3100/ready
+          - http://tempo:3200/ready
     relabel_configs:
       - { source_labels: [__address__], target_label: __param_target }
       - { source_labels: [__param_target], target_label: instance }
       - { target_label: __address__, replacement: "blackbox-exporter:9115" }
+
+  - job_name: blackbox-demo            # endpoints de la démo (profil compose « demo »)
+    metrics_path: /probe
+    params: { module: [http_local] }
+    static_configs:
+      - targets:
+          - http://units-service:8000/sante/
+          - http://mir-webapp:80/
+    relabel_configs:
+      - { source_labels: [__address__], target_label: __param_target }
+      - { source_labels: [__param_target], target_label: instance }
+      - { target_label: __address__, replacement: "blackbox-exporter:9115" }
+
+  # --- Gabarit PROD : cibles publiques en HTTPS (module http_2xx, exige un TLS valide).
+  #     Décommentez et remplacez par vos URLs une fois la plateforme exposée derrière un proxy TLS.
+  # - job_name: blackbox-public
+  #   metrics_path: /probe
+  #   params: { module: [http_2xx] }
+  #   static_configs:
+  #     - targets: ["https://grafana.example.com/api/health", "https://app.example.com/health"]
+  #   relabel_configs:
+  #     - { source_labels: [__address__], target_label: __param_target }
+  #     - { source_labels: [__param_target], target_label: instance }
+  #     - { target_label: __address__, replacement: "blackbox-exporter:9115" }

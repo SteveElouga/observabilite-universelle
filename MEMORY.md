@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1 socle, #3 units-service, #4 mir-webapp mergés dans `develop`** (`3892fc8`), recettes validées dans Grafana. **#5 (alerting réel + SLO) recette validée de bout en bout** (alerte reçue dans Slack) sur `feature/alerting-slo` ; reste la MR vers `develop`.
-- **Branches** : `develop` = `3892fc8` (socle + guide + 2 démos). `main` au bootstrap. Travail courant : `feature/alerting-slo` (depuis `develop`) — prête pour MR.
-- **Prochaine action** : pousser `feature/alerting-slo` + MR → `develop`. Ensuite #6 (sondes externes). Pas de CI (R8 « CI verte » plus tard) ; reco enabler gitleaks.
+- **Étape** : **#1/#3/#4 mergés dans `develop`** (`3892fc8`). **#5 (alerting + SLO) validé de bout en bout**, prêt pour MR sur `feature/alerting-slo`. **#6 (sondes externes) en cours** sur `feature/uptime-externe` (Blackbox ciblé + alertes de sonde + k6 démo + pattern Uptime Kuma hors infra).
+- **Branches** : `develop` = `3892fc8`. `main` au bootstrap. `feature/alerting-slo` (depuis `develop`) prête pour MR. `feature/uptime-externe` **créée depuis `feature/alerting-slo`** (chaînage pour garder MEMORY linéaire) — à **rebaser sur `develop` après le merge de #5** : `git rebase --onto develop feature/alerting-slo feature/uptime-externe`.
+- **Prochaine action** : MR #5 → `develop`, puis recette #6 sur le Mac (Blackbox : cibles vertes dans Prometheus ; k6 : `k6 run k6/smoke.js`), puis rebase + MR #6. Pas de CI (R8 « CI verte » plus tard) ; reco enabler gitleaks.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -20,7 +20,7 @@
 | 3 | ✅ **Fait (19/07/2026)** — Instrumentation Django `units-service` (`demo/units-service/`, profil compose `demo`). Recette validée dans Grafana : métrique `commandes_creees_total` (Prometheus), logs JSON avec `trace_id` (Loki), traces (Tempo). Correctif clé : `DJANGO_SETTINGS_MODULE` en env (avant `opentelemetry-instrument`). | `feature/otel-django` | §10.1 |
 | 4 | ✅ **Fait (19/07/2026)** — Frontend Angular `mir-webapp` (`demo/mir-webapp/`, profil `demo`, port 8090) : Faro (RUM Web Vitals + traces, propagation W3C) + erreurs via `ErrorHandler` Angular → `faro.api.pushError` (+ GlitchTip si DSN). nginx proxifie `/api` (anti-CORS). Recette validée : RUM et erreurs dans Loki (`{source="faro"}`), trace corrélée navigateur→`units-service` dans Tempo. Branche depuis `feature/otel-django` (dépend de #3). | `feature/faro-angular` | §10.2 |
 | 5 | ✅ **Fait (19/07/2026)** — Alerting réel : règles RED et SLO **réalignés sur les spanmetrics** (`traces_span_metrics_calls_total` / `_duration_milliseconds`, car units-service émet `http_server_duration_milliseconds` et non `..._request_duration_seconds`). Endpoint `/demo/erreur` (500) ajouté à units-service. **Recette validée de bout en bout** : `sloth generate` → règles chargées dans Prometheus (RED + SLO multi-burn-rate), erreurs provoquées → `HighErrorRate` Pending + `UnitsServiceAvailability` Firing → Alertmanager → **Slack `#alertes`**. Reste : MR vers `develop`. | `feature/alerting-slo` | §10.6 |
-| 6 | Sondes externes : Uptime Kuma configuré (hébergé hors infra), Blackbox ciblé, k6 en CI | `feature/uptime-externe` | §10.7, §7.5 |
+| 6 | 🔄 **En cours** — Sondes externes. Blackbox : module `http_local` (sans SSL) + cibles réelles (santé plateforme grafana/prometheus/loki/tempo + endpoints démo), gabarit HTTPS prod commenté. Alertes de sonde (`prometheus/rules/probes.yml` : ProbeDown, ProbeSlow, cert TLS). `k6/smoke.js` réécrit sur la démo locale. Uptime Kuma : pattern **hors infra** documenté (`uptime-kuma/README.md` + `docker-compose.external.yml`), service in-compose marqué dev-only. Reste : recette Mac + rebase/MR. | `feature/uptime-externe` | §10.7, §7.5 |
 | 7 | Phase 4 — astreinte : OneUptime (machine séparée) + receiver webhook Alertmanager | `feature/oneuptime` | §4.11, §10.6 |
 | 8 | Phase 4 — profiling : SDK Pyroscope Django + lien trace→profil (`pyroscope-otel`) | `feature/pyroscope-sdk` | §10.1, §10.5 |
 | 9 | Durcissement avant exposition : reverse proxy TLS, auth, ports non publiés, secrets | `feature/hardening` | §7.4 |
@@ -35,6 +35,16 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-20 — Session Claude : #5 validé de bout en bout + backlog #6 (sondes externes)
+- **#5 recette complète sur le Mac** : `sloth generate` → Prometheus charge `service-red` (red.yml) **et** `sloth-slo-alerts-units-service-requests-availability` (rules-slo.yml). Erreurs via `/demo/erreur` → `HighErrorRate` Pending (100 % de spans en erreur) et `UnitsServiceAvailability` **Firing** → Alertmanager (receiver `slack`) → **Slack `#alertes`** (`[FIRING:1] UnitsServiceAvailability`). Chaîne d'alerting bout en bout OK. Reste : MR `feature/alerting-slo` → `develop`.
+- **Détail SLO** : l'alerte page Sloth exige deux fenêtres (5m **et** 1h) au-dessus du seuil ; à 100 % d'erreurs les deux passent d'emblée, d'où un firing quasi immédiat. En dégradation réaliste (quelques %), elle serait plus lente que `HighErrorRate` (`for: 5m`).
+- **#6 démarré** sur `feature/uptime-externe` (depuis `feature/alerting-slo`, choix « tout est encore local » via questionnaire).
+  - **Blackbox** : ajout du module `http_local` (sans `fail_if_not_ssl`, les cibles internes sont en HTTP) ; `http_2xx` (SSL) conservé pour la prod. `prometheus.yml` : cibles fictives `example.com` remplacées par deux jobs réels — `blackbox-platform` (grafana/prometheus/loki/tempo, toujours actifs) et `blackbox-demo` (units-service `/sante/`, mir-webapp). Job HTTPS `blackbox-public` laissé commenté comme gabarit prod.
+  - **Alertes de sonde** : `prometheus/rules/probes.yml` (ProbeDown `probe_success==0`, ProbeSlow `probe_duration_seconds>1`, ProbeSSLCertExpiringSoon pour les cibles HTTPS). Chargé via `rule_files: rules/*.yml`.
+  - **k6** : `k6/smoke.js` réécrit sur la démo locale (`BASE_URL` paramétrable, défaut `http://localhost:8088`, exerce `/sante/` + `/demo/commande`). Câblage CI reporté au #10.
+  - **Uptime Kuma hors infra** : `uptime-kuma/README.md` (pourquoi hors infra = dead man's switch, où l'héberger, moniteurs, notif Slack) + `uptime-kuma/docker-compose.external.yml` (Kuma autonome sur machine séparée). Service in-compose annoté **dev-only**.
+- **Reste (Mac)** : recette #6 (cibles Blackbox vertes dans Prometheus `Status → Targets`, alerte ProbeDown en coupant un service, `k6 run k6/smoke.js`), puis `git rebase --onto develop feature/alerting-slo feature/uptime-externe` **après** le merge de #5, puis MR #6.
 
 ### 2026-07-19 — Session Claude : backlog #5 — alerting réel + SLO (règles RED/SLO)
 - Branche `feature/alerting-slo` depuis `develop` (`3892fc8`, avec #1/#3/#4 mergés).
