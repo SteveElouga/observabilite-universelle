@@ -15,17 +15,20 @@ observability/
 ├── prometheus/
 │   ├── prometheus.yml
 │   └── rules/
-│       └── red.yml                    # alertes RED (rules-slo.yml : généré par sloth)
+│       ├── red.yml                    # alertes RED sur spanmetrics (§10.6)
+│       ├── probes.yml                 # alertes de sonde Blackbox (ProbeDown, cert TLS)
+│       └── (rules-slo.yml)            # SLO multi-burn-rate : généré par sloth, hors Git
 ├── alertmanager/
 │   ├── alertmanager.yml               # webhook Slack via api_url_file
 │   └── secrets/
 │       └── slack_webhook_url.example  # → créer slack_webhook_url (hors Git)
 ├── loki-config.yaml
 ├── tempo-config.yaml                  # sans metrics_generator (fait au Collector)
-├── blackbox.yml                       # sondes externes
+├── blackbox.yml                       # modules de sonde en boîte noire (http_local, http_2xx)
+├── uptime-kuma/                       # sonde externe hébergée hors infra (README + compose dédié)
 ├── grafana/provisioning/datasources/
 │   └── datasources.yaml               # LA corrélation : métrique→trace→log→profil (§10.5)
-├── k6/smoke.js                        # parcours scripté (§10.7)
+├── k6/smoke.js                        # parcours synthétique (§10.7)
 └── slo/units-service.yml              # SLO Sloth (§10.6)
 ```
 
@@ -40,7 +43,7 @@ observability/
 | 4 | Depuis la trace → « logs de ce span » ; depuis un log → « Voir la trace » | **La corrélation fonctionne dans les deux sens** |
 | 5 | Charger le dashboard 1860 (Node Exporter Full), créer l'écran RED (§5) | Exemplars visibles sur les courbes de latence |
 | 6 | `sloth generate -i slo/units-service.yml -o prometheus/rules/rules-slo.yml` puis redémarrer Prometheus ; couper le service 2 min | L'alerte burn-rate part vers Slack |
-| 7 | Configurer Uptime Kuma (`:3001`) + brancher les jobs CI (annotations, source maps — doc CI/CD §10) | Trait « deploy » visible sur les courbes |
+| 7 | Déployer Uptime Kuma hors infra (`uptime-kuma/README.md`) + brancher les jobs CI (annotations, source maps — doc CI/CD §10) | Sonde externe verte ; trait « deploy » visible sur les courbes |
 | 8 | *(phase 4)* SDK Pyroscope (§10.1) + receiver Alertmanager → OneUptime (§10.6) | Flame graph continu ; escalade jusqu'au téléphone |
 
 Ports : Grafana **3000** · Prometheus **9090** · Alertmanager **9093** · Loki **3100** · Tempo **3200** · Pyroscope **4040** · Collector **4317/4318** · Alloy/Faro **12347** · Uptime Kuma **3001** · GlitchTip **8000**.
@@ -54,4 +57,4 @@ Ports : Grafana **3000** · Prometheus **9090** · Alertmanager **9093** · Loki
 
 ## À venir (backlog `MEMORY.md`)
 
-Dashboards RED/USE as-code (provisioning), instrumentation Django (§10.1) et Angular/Faro (§10.2), OneUptime (astreinte, machine séparée), durcissement §7.4.
+Dashboards RED/USE as-code (provisioning), OneUptime (astreinte, machine séparée), profiling Pyroscope (§10.1), durcissement §7.4, CI/CD (§10).

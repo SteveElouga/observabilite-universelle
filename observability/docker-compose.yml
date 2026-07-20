@@ -102,6 +102,9 @@ services:
     image: prom/blackbox-exporter:v0.25.0
     volumes: ["./blackbox.yml:/etc/blackbox_exporter/config.yml:ro"]
 
+  # Uptime Kuma DANS la pile = pratique en dev, mais point de vue non indépendant : si le
+  # serveur tombe, cette sonde tombe avec lui et ne peut plus alerter. En prod, la déployer
+  # HORS infra (autre machine/fournisseur) — voir uptime-kuma/README.md.
   uptime-kuma:
     image: louislam/uptime-kuma:1
     volumes: ["kuma-data:/app/data"]

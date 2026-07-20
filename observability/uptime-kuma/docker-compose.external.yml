@@ -1,0 +1,20 @@
+# uptime-kuma/docker-compose.external.yml — Uptime Kuma sur un hôte SÉPARÉ de la plateforme.
+# Objectif : un point de vue vraiment indépendant. Si le serveur d'observabilité tombe, cette
+# sonde, hébergée ailleurs, reste debout et vous prévient. Elle joue le rôle de « dead man's
+# switch » que ni Prometheus ni Alertmanager (hébergés sur le serveur surveillé) ne peuvent tenir.
+#
+# Déploiement (sur la machine externe, pas sur le serveur de la plateforme) :
+#   docker compose -f docker-compose.external.yml up -d
+# Puis ouvrez http://IP_DE_CETTE_MACHINE:3001 et suivez uptime-kuma/README.md.
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - kuma-data:/app/data
+    ports:
+      - "3001:3001"
+
+volumes:
+  kuma-data: {}

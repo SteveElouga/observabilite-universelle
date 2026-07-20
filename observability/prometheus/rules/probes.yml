@@ -1,0 +1,35 @@
+# prometheus/rules/probes.yml — alertes sur les sondes en boîte noire (Blackbox, §10.7 / §4.8)
+# Chargé automatiquement par Prometheus (rule_files: rules/*.yml).
+# Les métriques proviennent du module /probe de blackbox-exporter :
+#   probe_success                    -> 1 si la sonde réussit, 0 sinon
+#   probe_duration_seconds           -> durée totale de la sonde
+#   probe_ssl_earliest_cert_expiry   -> date d'expiration du certificat (cibles HTTPS uniquement)
+# Le label « instance » porte l'URL sondée (posé par relabel_configs dans prometheus.yml).
+groups:
+  - name: sondes-externes
+    rules:
+      - alert: ProbeDown
+        expr: probe_success == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.instance }} injoignable depuis la sonde ({{ $labels.job }})"
+          description: "La sonde HTTP échoue depuis au moins 2 minutes. Le service répond mal ou est arrêté."
+
+      - alert: ProbeSlow
+        expr: probe_duration_seconds > 1
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.instance }} : sonde lente ({{ $value | humanizeDuration }})"
+          description: "La sonde HTTP met plus d'une seconde à répondre depuis 5 minutes."
+
+      # Ne concerne que les cibles HTTPS (job blackbox-public) : la métrique est absente en HTTP,
+      # donc l'alerte reste silencieuse tant qu'aucune cible TLS n'est sondée.
+      - alert: ProbeSSLCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 15 * 24 * 3600
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.instance }} : certificat TLS expire dans moins de 15 jours"
+          description: "Renouveler le certificat avant expiration pour éviter une coupure côté clients."
