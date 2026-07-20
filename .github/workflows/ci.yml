@@ -1,0 +1,113 @@
+# CI — portes de qualité et de sécurité (lot #10 / bilan §CI-CD).
+# S'exécute sur chaque MR vers develop et main, et sur push de ces branches.
+# Une fois cette CI en place, ajoutez ses jobs comme required status checks dans la
+# protection de branche (règle R8) pour imposer la « CI verte » avant tout merge.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan de secrets
+        run: |
+          VER=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" | tar -xz gitleaks
+          ./gitleaks detect --no-git --source . --config .gitleaks.toml --redact --verbose
+
+  lint:
+    name: Lint (YAML, Dockerfiles, règles, compose)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: yamllint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: observability .github
+          config_data: |
+            extends: relaxed
+            rules:
+              line-length: disable
+              comments: disable
+              document-start: disable
+      - name: hadolint units-service
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: demo/units-service/Dockerfile
+          failure-threshold: error
+      - name: hadolint units-webapp
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: demo/units-webapp/Dockerfile
+          failure-threshold: error
+      - name: Règles Prometheus (promtool)
+        run: |
+          docker run --rm -v "$PWD/observability/prometheus/rules:/rules:ro" \
+            prom/prometheus:v3.1.0 promtool check rules /rules/red.yml /rules/probes.yml
+      - name: Validation du compose (base + durcissement)
+        run: |
+          docker compose -f observability/docker-compose.yml config -q
+          docker compose -f observability/docker-compose.yml -f observability/hardening/docker-compose.hardening.yml config -q
+
+  build:
+    name: Build des démos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: demo/units-webapp/package-lock.json
+      - name: units-webapp (npm ci + build)
+        working-directory: demo/units-webapp
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: units-service (Django check)
+        working-directory: demo/units-service
+        env:
+          UNITS_SECRET_KEY: ci-dummy-not-a-secret
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python manage.py check
+
+  scan:
+    name: Vulnérabilités et SBOM (Trivy, Syft)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy — dépendances et mauvaises configurations
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: SBOM (Syft, format CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+      - name: Publier le SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json

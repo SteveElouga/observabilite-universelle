@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "groupName": "images Docker"
+    },
+    {
+      "matchManagers": ["pip_requirements"],
+      "groupName": "dependances Python"
+    },
+    {
+      "matchManagers": ["npm"],
+      "groupName": "dependances npm"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "actions GitHub"
+    }
+  ]
+}
