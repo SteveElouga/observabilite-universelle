@@ -1,12 +1,14 @@
 # alertmanager/alertmanager.yml — routage des alertes (§10.6)
-# En phase 4 (§8) : ajouter un receiver webhook vers OneUptime (intégration Alertmanager
-# entrante) pour les gardes, escalades et appels.
+# Astreinte (§4.11, phase 4) : les alertes severity=page partent vers Slack ET vers OneUptime
+# (intégration Alertmanager entrante) pour la garde, l'escalade et les appels. OneUptime est
+# hébergé HORS infra (voir observability/oneuptime/README.md) ; son URL de webhook vit dans un
+# fichier monté, hors Git (secrets/oneuptime_webhook_url), comme le webhook Slack.
 route:
   receiver: slack
   group_by: [alertname, service_name]
   routes:
-    - { matchers: ['severity="page"'],   receiver: slack, repeat_interval: 1h }
-    - { matchers: ['severity="ticket"'], receiver: slack, repeat_interval: 24h }
+    - { matchers: ['severity="page"'],   receiver: page-oncall, repeat_interval: 1h }
+    - { matchers: ['severity="ticket"'], receiver: slack,       repeat_interval: 24h }
 inhibit_rules:              # un "page" actif fait taire les "ticket" du même service
   - source_matchers: ['severity="page"']
     target_matchers: ['severity="ticket"']
@@ -18,4 +20,16 @@ receivers:
       # le webhook vit dans un fichier monté, HORS GIT (voir secrets/ et README).
       - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
         channel: "#alertes"
+        send_resolved: true
+
+  # severity=page : double notification. Slack pour la visibilité de l'équipe, et OneUptime
+  # pour la garde (rotation d'astreinte, escalade, appel téléphonique). Voir oneuptime/README.md.
+  - name: page-oncall
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
+        channel: "#alertes"
+        send_resolved: true
+    webhook_configs:
+      # OneUptime, intégration Alertmanager entrante (url_file : Alertmanager >= 0.26).
+      - url_file: /etc/alertmanager/secrets/oneuptime_webhook_url
         send_resolved: true
