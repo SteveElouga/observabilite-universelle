@@ -34,7 +34,7 @@ Exercice. Sans regarder le code, écrivez sur papier les trois indicateurs RED d
 
 Tout part de là. Comprendre la collecte, c'est comprendre pourquoi les données arrivent propres et corrélées.
 
-**OpenTelemetry.** C'est le standard ouvert d'instrumentation, indépendant du fournisseur. Il définit des SDK par langage, une instrumentation automatique qui capte les bibliothèques courantes sans toucher au code métier, un protocole de transport unique appelé OTLP, des conventions sémantiques qui nomment les attributs de façon uniforme, et un mécanisme de propagation de contexte qui transmet l'identifiant de trace d'un service à l'autre au format W3C. La section 10.1 du document maître et le README de `units-service` montrent l'instrumentation Python sans une ligne d'instrumentation dans le code applicatif. La section 10.2 et le README de `mir-webapp` montrent la propagation du navigateur jusqu'au backend.
+**OpenTelemetry.** C'est le standard ouvert d'instrumentation, indépendant du fournisseur. Il définit des SDK par langage, une instrumentation automatique qui capte les bibliothèques courantes sans toucher au code métier, un protocole de transport unique appelé OTLP, des conventions sémantiques qui nomment les attributs de façon uniforme, et un mécanisme de propagation de contexte qui transmet l'identifiant de trace d'un service à l'autre au format W3C. La section 10.1 du document maître et le README de `units-service` montrent l'instrumentation Python sans une ligne d'instrumentation dans le code applicatif. La section 10.2 et le README de `units-webapp` montrent la propagation du navigateur jusqu'au backend.
 
 **Le Collector.** C'est le pivot de l'architecture. Aucune application ne parle directement aux backends ; toutes envoient à un Collector central qui reçoit, transforme et route. Sa configuration s'articule en récepteurs, processeurs, exportateurs et connecteurs. Deux points le rendent remarquable dans ce projet. D'abord l'échantillonnage par la queue, qui décide de garder ou non une trace une fois qu'elle est complète, ce qui permet de conserver toutes les erreurs et toutes les traces lentes tout en jetant une partie du trafic normal. Ensuite les connecteurs qui dérivent des métriques à partir des traces avant cet échantillonnage, si bien que les taux d'erreur et les latences restent exacts même quand des traces sont ensuite écartées. La section 10.3 du document maître détaille ce pipeline, et le fichier `observability/otel-collector-config.yaml` en est la mise en œuvre.
 
@@ -114,13 +114,13 @@ Rôle. Suivi des erreurs applicatives, compatible avec le protocole Sentry. Il r
 
 Référence. La documentation glitchtip.com et les SDK Sentry.
 
-Exercice. Depuis `mir-webapp`, déclenchez une erreur et retrouvez la dans GlitchTip avec sa trace d'appel.
+Exercice. Depuis `units-webapp`, déclenchez une erreur et retrouvez la dans GlitchTip avec sa trace d'appel.
 
 ### Grafana Alloy et Grafana Faro
 
 Rôle. Alloy est l'agent qui collecte les logs des conteneurs et qui héberge le récepteur des données du navigateur. Faro est le SDK web qui mesure l'expérience réelle des utilisateurs, les Web Vitals, les erreurs de page et les traces côté navigateur, avec propagation vers le backend.
 
-À maîtriser. Le rôle d'agent d'Alloy et son fichier de configuration `observability/alloy-config.alloy` ; l'étiquette qui rend les événements du navigateur filtrables dans Loki ; la propagation de trace du navigateur jusqu'à Django, qui fait de deux traces une seule. La section 10.2 et le README de `mir-webapp` détaillent tout cela.
+À maîtriser. Le rôle d'agent d'Alloy et son fichier de configuration `observability/alloy-config.alloy` ; l'étiquette qui rend les événements du navigateur filtrables dans Loki ; la propagation de trace du navigateur jusqu'à Django, qui fait de deux traces une seule. La section 10.2 et le README de `units-webapp` détaillent tout cela.
 
 Référence. La documentation grafana.com sur Alloy et sur Faro.
 

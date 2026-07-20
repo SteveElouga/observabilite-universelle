@@ -1,5 +1,5 @@
 {
-  "name": "mir-webapp",
+  "name": "units-webapp",
   "version": "0.1.0",
   "private": true,
   "description": "Démo frontend Angular instrumentée Faro (RUM) + GlitchTip (erreurs) — §10.2.",

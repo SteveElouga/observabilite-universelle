@@ -648,7 +648,7 @@ flowchart LR
   end
   P -->|"stubs versionnés v1.8.0"| S1["units-service"]
   P -->|"stubs versionnés v1.8.0"| S2["orders-service"]
-  P -->|"stubs versionnés v1.8.0"| FE["mir-webapp (types)"]
+  P -->|"stubs versionnés v1.8.0"| FE["units-webapp (types)"]
 ```
 
 **③ Un déploiement d'ensemble, pas N triggers.** Chaque service déclenche aujourd'hui son déploiement isolément (trigger Ansible). À N services, on perd la vue d'ensemble (« quelles versions sont censées tourner ensemble ? »). Le pattern GitOps : un **dépôt de configuration** unique décrit l'état désiré de *tous* les services par environnement — voir §7.5.
@@ -1096,7 +1096,7 @@ rules:
 webServer: [
   { command: 'node mocks/graphql-server.js', port: 4001, reuseExistingServer: !process.env.CI },
   { command: 'node mocks/auth-server.js',    port: 4002, reuseExistingServer: !process.env.CI },
-  { command: 'npx nx serve mir-webapp',      port: 4200, reuseExistingServer: !process.env.CI },
+  { command: 'npx nx serve units-webapp',      port: 4200, reuseExistingServer: !process.env.CI },
 ],
 ```
 
@@ -1623,11 +1623,11 @@ dast_zap_baseline:                                     # [#5] NOUVEAU — hebdo 
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
 ```
-### 10.2 Frontend Angular — `.gitlab-ci.yml` (mir-webapp, v2)
+### 10.2 Frontend Angular — `.gitlab-ci.yml` (units-webapp, v2)
 
 ```yaml
 # =============================================================================
-# mir-webapp — Pipeline v2 (recommandations du document d'architecture)
+# units-webapp — Pipeline v2 (recommandations du document d'architecture)
 #   lint --+--> build ----+--> test (unit+e2e) --> package --> deploy
 #          +--> security -+                        (review app par MR)
 # Runner : executor Docker (tag mirweb-docker)
@@ -1653,8 +1653,8 @@ default:
 
 variables:
   NODE_OPTIONS: "--max-old-space-size=2048"
-  IMAGE_NAME:  "$CI_REGISTRY_IMAGE/mir-webapp"
-  CACHE_IMAGE: "$CI_REGISTRY_IMAGE/cache/mir-webapp"
+  IMAGE_NAME:  "$CI_REGISTRY_IMAGE/units-webapp"
+  CACHE_IMAGE: "$CI_REGISTRY_IMAGE/cache/units-webapp"
   IMAGE_TAG_TMP: "tmp-$CI_COMMIT_SHORT_SHA"
   COVERAGE_THRESHOLD: "85"                             # [#7] variable partagée
   GIT_DEPTH: "0"        # requis par nx affected (merge-base) — coût de clone accepté
@@ -1690,7 +1690,7 @@ lint:
   script:
     # nx affected : on ne lint que ce que le commit touche — levier de vitesse n°1
     - npx nx affected -t lint --base="$NX_BASE" --configuration=ci
-    - npx eslint webapp/mir-webapp/src --config webapp/mir-webapp/eslint.config.mjs
+    - npx eslint webapp/units-webapp/src --config webapp/units-webapp/eslint.config.mjs
       --ext .ts,.html -f eslint-formatter-codeclimate -o gl-code-quality-report.json || true
     - test -s gl-code-quality-report.json || echo '[]' > gl-code-quality-report.json
   artifacts:
@@ -1798,7 +1798,7 @@ coverage_check:
         echo "Aucune couverture générée (rien d'affecté par ce commit) — skip"
         exit 0
       fi
-      if   [ -f coverage/apps/mir-webapp/coverage-summary.json ]; then F=coverage/apps/mir-webapp/coverage-summary.json
+      if   [ -f coverage/apps/units-webapp/coverage-summary.json ]; then F=coverage/apps/units-webapp/coverage-summary.json
       elif [ -f coverage/coverage-summary.json ];                then F=coverage/coverage-summary.json
       else echo "ERROR: coverage-summary.json introuvable"; exit 1; fi
       COVERAGE=$(node -p "require('./$F').total.lines.pct")
@@ -1821,7 +1821,7 @@ e2e_tests:
   script:
     # [#12] Auth mockée (playwright.config.ts > webServer : graphql:4001 + auth:4002 + app:4200)
     # → zéro dépendance externe, le job tourne sur CHAQUE MR sans condition de secret
-    - npx nx e2e mir-webapp-e2e
+    - npx nx e2e units-webapp-e2e
   artifacts: { when: always, paths: [dist/.playwright/], expire_in: 1 week }
   allow_failure: true    # → false une fois la stabilité prouvée sur le runner
   rules:
@@ -1906,7 +1906,7 @@ upload_sourcemaps:                                     # NOUVEAU — erreurs pro
   needs: [docker_push_final, build_application]
   variables:
     SENTRY_ORG: "mon-org"
-    SENTRY_PROJECT: "mir-webapp"
+    SENTRY_PROJECT: "units-webapp"
     # SENTRY_URL pointe vers votre GlitchTip self-host ; SENTRY_AUTH_TOKEN en variable CI
   script:
     - RELEASE="${CI_COMMIT_TAG:-$CI_COMMIT_SHA}"
@@ -1958,15 +1958,15 @@ stop_review:
     - DEPLOY_TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHA}"
     - git clone "https://gitlab-ci-token:${GITOPS_TOKEN}@gitlab.com/${GITOPS_REPO_PATH}.git" gitops
     - cd gitops
-    - yq -i ".image.tag = \"$DEPLOY_TAG\"" "environments/${TARGET_ENV}/mir-webapp/values.yaml"
+    - yq -i ".image.tag = \"$DEPLOY_TAG\"" "environments/${TARGET_ENV}/units-webapp/values.yaml"
     - git config user.email "ci@example.com" && git config user.name "gitlab-ci"
-    - git commit -am "deploy(mir-webapp) ${DEPLOY_TAG} -> ${TARGET_ENV}"
+    - git commit -am "deploy(units-webapp) ${DEPLOY_TAG} -> ${TARGET_ENV}"
     - git push origin HEAD:main
     - |
       curl -sf -X POST "$GRAFANA_URL/api/annotations" \
         -H "Authorization: Bearer $GRAFANA_API_TOKEN" -H "Content-Type: application/json" \
-        -d "{\"tags\":[\"deploy\",\"mir-webapp\",\"$TARGET_ENV\"],
-             \"text\":\"Deploy mir-webapp $DEPLOY_TAG -> $TARGET_ENV ($GITLAB_USER_LOGIN)\"}" \
+        -d "{\"tags\":[\"deploy\",\"units-webapp\",\"$TARGET_ENV\"],
+             \"text\":\"Deploy units-webapp $DEPLOY_TAG -> $TARGET_ENV ($GITLAB_USER_LOGIN)\"}" \
         || echo "WARN: annotation Grafana échouée (non bloquant)"
 
 deploy_dev:

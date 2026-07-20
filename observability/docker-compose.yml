@@ -38,9 +38,9 @@ services:
   # ---- DÉMO (profil "demo") : frontend Angular instrumenté Faro + GlitchTip (§10.2) ----
   # nginx sert l'app et proxifie /api vers units-service (même origine -> traceparent transmis,
   # la trace navigateur et la trace Django ne font qu'une). Faro poste direct sur alloy:12347 (CORS ouvert).
-  mir-webapp:
+  units-webapp:
     profiles: ["demo"]
-    build: { context: ../demo/mir-webapp }
+    build: { context: ../demo/units-webapp }
     ports: ["8090:8080"]               # nginx non-root écoute sur 8080 dans le conteneur
     depends_on: [units-service, alloy]
 

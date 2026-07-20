@@ -1,5 +1,5 @@
 /**
- * Configuration de la démo mir-webapp.
+ * Configuration de la démo units-webapp.
  * Valeurs par défaut pour un accès local (http://localhost:8090).
  * Le récepteur Faro d'Alloy accepte le CORS (§10.4), donc l'appel direct fonctionne.
  * L'appel backend passe par le proxy nginx (/api), donc même origine, pas de CORS.

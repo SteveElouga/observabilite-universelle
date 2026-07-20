@@ -1,4 +1,4 @@
-# mir-webapp (démonstration RUM frontend)
+# units-webapp (démonstration RUM frontend)
 
 Petite application Angular instrumentée selon la **§10.2** du document maître. Elle complète `units-service` (le backend de démo) en prouvant la partie **côté navigateur** de l'observabilité : expérience réelle utilisateur, erreurs JavaScript, et surtout la **propagation de trace** du clic jusqu'à la requête Django.
 
@@ -10,7 +10,7 @@ Petite application Angular instrumentée selon la **§10.2** du document maître
 
 ## Prérequis
 
-La démo `units-service` (backlog #3) doit être présente et lancée, car `mir-webapp` appelle son endpoint. Les deux vivent sous le profil `demo`.
+La démo `units-service` (backlog #3) doit être présente et lancée, car `units-webapp` appelle son endpoint. Les deux vivent sous le profil `demo`.
 
 ## Lancer la démo
 
@@ -26,7 +26,7 @@ Puis ouvrez http://localhost:8090 et cliquez sur les deux boutons.
 
 | Signal | Où | Quoi |
 |---|---|---|
-| Trace de bout en bout | Explore, source Tempo | Après « Appeler le backend » : une trace unique du navigateur (`mir-webapp`) jusqu'à `units-service` |
+| Trace de bout en bout | Explore, source Tempo | Après « Appeler le backend » : une trace unique du navigateur (`units-webapp`) jusqu'à `units-service` |
 | Expérience réelle et erreurs | Explore, source Loki, requête `{source="faro"}` | Les événements Faro : Web Vitals, et l'erreur JS après le second bouton |
 | Erreurs (optionnel) | GlitchTip (`:8000`) | L'erreur JS regroupée, si un DSN est configuré |
 

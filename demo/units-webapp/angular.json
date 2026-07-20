@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "mir-webapp": {
+    "units-webapp": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
@@ -35,8 +35,8 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
-            "production": { "buildTarget": "mir-webapp:build:production" },
-            "development": { "buildTarget": "mir-webapp:build:development" }
+            "production": { "buildTarget": "units-webapp:build:production" },
+            "development": { "buildTarget": "units-webapp:build:development" }
           },
           "defaultConfiguration": "development"
         }

@@ -951,7 +951,7 @@ import { TracingInstrumentation } from '@grafana/faro-web-tracing';
 
 initializeFaro({
   url: 'https://obs.example.com/faro/collect',   // récepteur Faro d'Alloy (§10.4)
-  app: { name: 'mir-webapp', version: APP_VERSION, environment: 'prod' },
+  app: { name: 'units-webapp', version: APP_VERSION, environment: 'prod' },
   instrumentations: [
     ...getWebInstrumentations(),        // Web Vitals, erreurs JS, logs console, sessions
     new TracingInstrumentation(),       // traces fetch/XHR → propagées jusqu'à Django
