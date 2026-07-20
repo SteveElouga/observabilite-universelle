@@ -39,6 +39,7 @@
 | 2026-07-17 | **Exception unique** | Commit de bootstrap effectué **directement sur `main`** (dépôt vide : `develop` ne pouvait pas encore exister). Portée : ce seul commit initial. Toute modification ultérieure de `main`/`develop` passe par MR (R2, R4, R6). |
 | 2026-07-20 | **Décision propriétaire (R13)** | Steve autorise la **modification du hook `pre-commit`** pour y **ajouter le scan gitleaks**. C'est un renforcement de sécurité, jamais un contournement des protections de branches. Portée : ajout d'un bloc de scan de secrets dans `.githooks/pre-commit` + fichier `.gitleaks.toml`. |
 | 2026-07-20 | Décision | Steve (questionnaire) : renommer la démo frontend `mir-webapp` → `units-webapp` (paire avec `units-service`), et **étendre** le renommage aux exemples du document CI/CD pour la cohérence globale. |
+| 2026-07-20 | **Décision propriétaire (R13)** | Steve autorise la **mise à jour de la règle R8** dans la section « Règles Git » du `README.md` (protégée par R12) : la formuler au présent (protections **actives**) et refléter le réglage réel du dépôt solo (**0 approbation** requise, CI verte + `enforce_admins`). Portée : réécriture de la seule ligne R8, aucune autre règle modifiée. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
 
