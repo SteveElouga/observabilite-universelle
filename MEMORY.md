@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1..#6, docs, S1, renommage `units-webapp`, S2 (dossier sécurité) et S3 (durcissement infra) mergés dans `develop`** (`53a643b`). **Lot S4 (CI/CD sécurité)** en cours sur `feature/cicd-securite`. Plan de correction quasi terminé : reste l'action utilisateur R8.
-- **Branches** : `develop` = tout jusqu'à S3 (`53a643b`). `main` au bootstrap. `feature/cicd-securite` (S4, depuis `develop`) prête pour MR.
-- **Prochaine action** : MR S4 → `develop` ; activer la CI comme required status check dans R8. Backlog restant hors correction : #7 (astreinte OneUptime), #8 (Pyroscope SDK).
+- **Étape** : **Plan de correction du bilan TERMINÉ** — #1..#6, docs, S1, renommage `units-webapp`, S2, S3 et S4 mergés dans `develop` (`e5a648c`), et **R8 actif** (branches protégées, CI verte obligatoire, historique linéaire, 0 approbation car dépôt solo). Reste du backlog initial : phase 4 (#7 astreinte OneUptime, #8 Pyroscope SDK).
+- **Branches** : `develop` = plan de correction complet (`e5a648c`), **protégé côté GitHub (R8)**. `main` au bootstrap. Tout changement passe désormais par MR + CI verte, propriétaire inclus (`enforce_admins`).
+- **Prochaine action** : lot #7 (astreinte OneUptime). Rappel : la CI tourne sur toute MR (y compris docs) pour satisfaire les required status checks de R8.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -28,7 +28,7 @@
 | S1 | ✅ **Fait (20/07/2026)** — Enablers de sécurité locale : gitleaks en pre-commit (+ `.gitleaks.toml`), units-webapp non-root (nginx unprivileged, 8080), verrou de dépendances (`npm ci` + `package-lock.json`). Mergé. | `feature/durcissement-securite` | Bilan §sécurité |
 | S2 | ✅ **Fait (20/07/2026)** — Dossier de sécurité documentaire : `SECURITY.md` (politique + signalement + secrets), `docs/Modele_Menace.md` (STRIDE, frontières, tableau priorisé), `docs/Runbooks_Incident.md` (un playbook par alerte + panne plateforme). | `docs/dossier-securite` | Bilan §documentation |
 
-> **Plan de correction (bilan 2026-07-20) — TERMINÉ côté implémentation** : S1 (enablers locaux), S2 (dossier sécurité), S3 (durcissement infra, #9) et S4 (CI/CD sécurité, #10) faits et commités. **Reste l'action utilisateur R8** (protections de branches GitHub, commandes `gh` fournies), plus le volet organisationnel du registre (point #9 : politiques et évaluation de risque), volontairement hors périmètre.
+> **Plan de correction (bilan 2026-07-20) — TERMINÉ** : S1 (enablers locaux), S2 (dossier sécurité), S3 (durcissement infra, #9), S4 (CI/CD sécurité, #10) et **R8** (protections de branches GitHub, actif le 20/07) faits. Seul reste, volontairement hors périmètre, le volet organisationnel du registre (point #9 : politiques écrites et évaluation de risque formelle).
 
 ## Décisions & exceptions consignées
 
@@ -41,6 +41,12 @@
 | 2026-07-20 | Décision | Steve (questionnaire) : renommer la démo frontend `mir-webapp` → `units-webapp` (paire avec `units-service`), et **étendre** le renommage aux exemples du document CI/CD pour la cohérence globale. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-20 — Session Claude : plan de correction bouclé (S4 mergé, R8 actif)
+- **S4 mergé** dans `develop` (PR #16, `e5a648c`). Premier run CI : deux correctifs techniques (`promtool` via `--entrypoint` car l'image prom/prometheus a `prometheus` en entrypoint ; Trivy lancé en conteneur car l'action `@0.24.0` n'existait pas). Le scan a ensuite détecté un vrai **CVE-2025-64459** (injection SQL, Django 5.1.4) → **Django bumpé en 5.1.14** ; CI verte, quatre jobs OK.
+- **R8 activé** par Steve via `gh api` sur `develop` et `main` : MR obligatoire, `enforce_admins: true`, `required_linear_history` sur develop, force-push et suppression interdits, et **les 4 checks CI exigés** sur develop (contextes vérifiés, ils correspondent aux `name:` des jobs). 0 approbation requise (dépôt solo, GitHub interdit l'auto-approbation), `required_status_checks: null` sur main.
+- **Conséquence** : gouvernance appliquée de bout en bout côté serveur. Plus aucun changement n'entre dans `develop` sans MR ni CI verte, propriétaire compris. Toute MEMORY future passe donc par une MR (comme celle-ci).
+- **Suite** : phase 4 du backlog initial, #7 (astreinte OneUptime) puis #8 (profiling Pyroscope).
 
 ### 2026-07-20 — Session Claude : lot S4 — CI/CD sécurité (GitHub Actions)
 - Sur `feature/cicd-securite`, depuis `develop` complet (`53a643b`, S2 et S3 mergés). Clôt le plan de correction issu du bilan.
