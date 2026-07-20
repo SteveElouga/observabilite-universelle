@@ -7,7 +7,7 @@ import { environment } from '../environments/environment';
   standalone: true,
   template: `
     <main>
-      <h1>mir-webapp</h1>
+      <h1>units-webapp</h1>
       <p>Frontend de démonstration instrumenté avec Grafana Faro (RUM et traces) et GlitchTip (erreurs).</p>
 
       <div class="actions">
@@ -47,6 +47,6 @@ export class AppComponent {
 
   declencherErreur(): void {
     // Erreur JS volontaire : captée par Faro (-> Loki) et par GlitchTip si un DSN est configuré.
-    throw new Error('Erreur de démonstration déclenchée depuis mir-webapp');
+    throw new Error('Erreur de démonstration déclenchée depuis units-webapp');
   }
 }

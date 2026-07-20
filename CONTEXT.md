@@ -42,7 +42,7 @@ Implémenter, **pas à pas**, la stack d'observabilité **100 % gratuite, open s
 ## Cibles techniques du projet
 
 - **Backend** : Django — service de référence `units-service` (gunicorn) ; instrumentation OTel §10.1 du document maître.
-- **Frontend** : Angular — application `mir-webapp` ; Faro + GlitchTip §10.2.
+- **Frontend** : Angular — application `units-webapp` ; Faro + GlitchTip §10.2.
 - **Mobile** : SDK Sentry → GlitchTip (symbolication via pipeline CI).
 - **Topologie de départ** : mono-serveur Docker Compose (§7.1 / §10.4) ; cible d'échelle : Kubernetes agent/gateway (§7.2 / §10.8).
 - **Plateforme Git** : **GitHub** (le terme « MR » du dépôt = Pull Request GitHub).

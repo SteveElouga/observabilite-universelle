@@ -12,7 +12,7 @@ import { environment } from './environments/environment';
 //    jusqu'au backend -> la trace navigateur et la trace Django ne font qu'une.
 initializeFaro({
   url: environment.faroUrl,
-  app: { name: 'mir-webapp', version: environment.appVersion, environment: environment.env },
+  app: { name: 'units-webapp', version: environment.appVersion, environment: environment.env },
   instrumentations: [
     ...getWebInstrumentations(),
     new TracingInstrumentation(),

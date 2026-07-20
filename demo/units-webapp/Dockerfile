@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# mir-webapp — build Angular (Node) puis service statique + proxy par nginx. Image multi-stage.
+# units-webapp — build Angular (Node) puis service statique + proxy par nginx. Image multi-stage.
 FROM node:20-bookworm-slim AS build
 WORKDIR /app
 # package-lock.json optionnel (glob *) : npm ci si présent (build reproductible), sinon npm install.
