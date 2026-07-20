@@ -1,5 +1,5 @@
 # Dépendances épinglées (ADR versions figées). Instrumentation : §10.1 du document maître.
-Django==5.1.4
+Django==5.1.14   # CVE-2025-64459 (injection SQL) corrigée sur la ligne 5.1 ; détectée par la CI Trivy
 gunicorn==23.0.0
 opentelemetry-distro==0.50b0
 opentelemetry-exporter-otlp==1.29.0
