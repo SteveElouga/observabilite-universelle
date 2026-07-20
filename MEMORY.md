@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1/#3/#4 mergés dans `develop`** (`3892fc8`). **#5 (alerting + SLO) validé de bout en bout**, prêt pour MR sur `feature/alerting-slo`. **#6 (sondes externes) en cours** sur `feature/uptime-externe` (Blackbox ciblé + alertes de sonde + k6 démo + pattern Uptime Kuma hors infra).
-- **Branches** : `develop` = `3892fc8`. `main` au bootstrap. `feature/alerting-slo` (depuis `develop`) prête pour MR. `feature/uptime-externe` **créée depuis `feature/alerting-slo`** (chaînage pour garder MEMORY linéaire) — à **rebaser sur `develop` après le merge de #5** : `git rebase --onto develop feature/alerting-slo feature/uptime-externe`.
-- **Prochaine action** : MR #5 → `develop`, puis recette #6 sur le Mac (Blackbox : cibles vertes dans Prometheus ; k6 : `k6 run k6/smoke.js`), puis rebase + MR #6. Pas de CI (R8 « CI verte » plus tard) ; reco enabler gitleaks.
+- **Étape** : **#1/#3/#4/#5 mergés dans `develop`** (#5 mergé le 20/07/2026). **#6 (sondes externes) validé de bout en bout** sur `feature/uptime-externe` ; reste rebase sur `develop` + MR.
+- **Branches** : `develop` = #1..#5 (rafraîchir en local par `git pull` ; le bac à sable est resté à `3892fc8`, sans réseau GitHub). `main` au bootstrap. `feature/uptime-externe` **créée depuis `feature/alerting-slo`** (chaînage pour garder MEMORY linéaire) — à **rebaser sur `develop`** : `git rebase --onto develop feature/alerting-slo feature/uptime-externe`.
+- **Prochaine action** : sur le Mac, `git pull` develop, rebaser #6, push + MR #6 → `develop`. Ensuite #7 (astreinte OneUptime) ou enabler gitleaks. Pas de CI (R8 « CI verte » plus tard).
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
