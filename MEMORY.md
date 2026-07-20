@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1..#6 + `docs` (bilan/parcours) + lot S1 (durcissement local) mergés dans `develop`** (`82dc281`). **Renommage de la démo frontend `mir-webapp` → `units-webapp`** fait sur `refactor/rename-units-webapp` (prêt pour MR).
-- **Branches** : `develop` = #1..#6 + docs + S1 (`82dc281`). `main` au bootstrap. `refactor/rename-units-webapp` (depuis `develop`) prête pour MR.
-- **Prochaine action** : MR du renommage → `develop` ; puis S2 (dossier sécurité), S3 = durcissement infra (#9), S4 = CI/CD sécurité (#10). **Action utilisateur** : activer les protections de branches GitHub (R8).
+- **Étape** : **#1..#6, `docs` (bilan/parcours), lot S1 (durcissement local) et le renommage `units-webapp` mergés dans `develop`** (`6674d33`). **Lot S2 (dossier de sécurité)** en cours sur `docs/dossier-securite`.
+- **Branches** : `develop` = tout ce qui précède (`6674d33`). `main` au bootstrap. `docs/dossier-securite` (depuis `develop`) en cours.
+- **Prochaine action** : MR S2 → `develop` ; puis S3 = durcissement infra (#9), S4 = CI/CD sécurité (#10). **Action utilisateur** : activer les protections de branches GitHub (R8).
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -25,8 +25,8 @@
 | 8 | Phase 4 — profiling : SDK Pyroscope Django + lien trace→profil (`pyroscope-otel`) | `feature/pyroscope-sdk` | §10.1, §10.5 |
 | 9 | Durcissement avant exposition : reverse proxy TLS, auth, ports non publiés, secrets | `feature/hardening` | §7.4 |
 | 10 | CI/CD : annotations de déploiement + upload source maps + Renovate | `feature/cicd-hooks` | doc CI/CD §10 |
-| S1 | 🔄 **En cours (20/07/2026)** — Enablers de sécurité locale : gitleaks en pre-commit (+ `.gitleaks.toml`), units-webapp non-root (nginx unprivileged, 8080), verrou de dépendances (`npm ci` si `package-lock.json`). | `feature/durcissement-securite` | Bilan §sécurité |
-| S2 | Dossier de sécurité documentaire : `SECURITY.md`, modèle de menace, runbooks de réponse par alerte. | `docs/dossier-securite` | Bilan §documentation |
+| S1 | ✅ **Fait (20/07/2026)** — Enablers de sécurité locale : gitleaks en pre-commit (+ `.gitleaks.toml`), units-webapp non-root (nginx unprivileged, 8080), verrou de dépendances (`npm ci` + `package-lock.json`). Mergé. | `feature/durcissement-securite` | Bilan §sécurité |
+| S2 | ✅ **Fait (20/07/2026)** — Dossier de sécurité documentaire : `SECURITY.md` (politique + signalement + secrets), `docs/Modele_Menace.md` (STRIDE, frontières, tableau priorisé), `docs/Runbooks_Incident.md` (un playbook par alerte + panne plateforme). | `docs/dossier-securite` | Bilan §documentation |
 
 > **Plan de correction (bilan 2026-07-20, tous points sauf le volet organisationnel)** : S1 et S2 ci-dessus ; **S3 = durcissement infra (#9)** (TLS reverse proxy, auth backends, ports non publiés, chiffrement au repos, sauvegarde) ; **S4 = CI/CD sécurité (#10)** (tests, scan dépendances et images, SBOM, gitleaks en CI) ; **R8 = action utilisateur** (protections de branches GitHub).
 
@@ -41,6 +41,13 @@
 | 2026-07-20 | Décision | Steve (questionnaire) : renommer la démo frontend `mir-webapp` → `units-webapp` (paire avec `units-service`), et **étendre** le renommage aux exemples du document CI/CD pour la cohérence globale. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-20 — Session Claude : lot S2 — dossier de sécurité documentaire
+- Sur `docs/dossier-securite`, depuis `develop` complet (`6674d33`, renommage inclus). Trois nouveaux documents, aucune modification de code.
+- **`SECURITY.md`** (racine) : signalement privé de vulnérabilité, périmètre, posture laboratoire assumée (pas de TLS ni d'auth, ne pas exposer en l'état), gestion des secrets (gitignore, `alertmanager/secrets`, gitleaks), bonnes pratiques déployeur, dépendances épinglées, versions supportées.
+- **`docs/Modele_Menace.md`** : méthode STRIDE. Actifs, frontières de confiance, diagramme de flux Mermaid, analyse par famille de menace avec mitigations en place et planifiées, tableau récapitulatif priorisé (gravité + état). Renvoie au bilan et au lot #9.
+- **`docs/Runbooks_Incident.md`** : un runbook par alerte réelle (HighErrorRate, HighLatencyP99, UnitsServiceAvailability, ProbeDown, ProbeSlow, ProbeSSLCertExpiringSoon) + panne plateforme + escalade. Chaque : signification, diagnostic (corrélation Grafana + requêtes PromQL/TraceQL), remédiation, escalade. Rappelle le faux positif ProbeDown (redémarrer `blackbox-exporter` après modif de config).
+- **Reste** : MR S2 → `develop`. Ensuite S3 (durcissement infra, #9), S4 (CI/CD sécurité, #10), et l'action utilisateur R8.
 
 ### 2026-07-20 — Session Claude : renommage de la démo frontend `mir-webapp` → `units-webapp`
 - Décision de Steve (questionnaire) : nom `units-webapp` (paire avec `units-service`), et **tout renommer**, y compris les 14 références du document CI/CD, pour la cohérence globale.
