@@ -6,7 +6,7 @@ Ce parcours a un double objectif : connaître ce projet dans ses moindres détai
 
 Progressez dans l'ordre des étapes. Chacune suppose la précédente. À chaque module, respectez la même discipline : lisez la section indiquée de nos documents, assimilez le concept standard, confrontez le à la référence externe, puis faites l'exercice sur votre propre stack et vérifiez le résultat dans Grafana. Un module n'est acquis que lorsque l'exercice réussit et que vous sauriez l'expliquer à quelqu'un d'autre.
 
-Les documents de référence du dépôt, cités tout au long, sont les suivants : le document maître `Architecture_Observabilite_Universelle-2.md` (le quoi et le pourquoi, avec le code du socle en section 10), le document compagnon `Architecture_CICD_Universelle.md`, le guide d'intégration `docs/Guide_Utilisation_Plateforme_Observabilite.md`, le triptyque de gouvernance `README.md`, `CONTEXT.md`, `MEMORY.md`, les README de composants sous `observability/` et `demo/`, et le bilan `docs/Bilan_Maturite_Conformite.md`.
+Les documents de référence du dépôt, cités tout au long, sont les suivants : le document maître `Architecture_Observabilite_Universelle-2.md` (le quoi et le pourquoi, avec le code du socle en section 10), le document compagnon `Architecture_CICD_Universelle.md`, le guide d'intégration `docs/Guide_Utilisation_Plateforme_Observabilite.md`, le triptyque de gouvernance `README.md`, `CONTEXT.md`, `MEMORY.md`, les README de composants sous `observability/` et `demo/`, le dossier de sécurité (`SECURITY.md`, `docs/Modele_Menace.md`, `docs/Runbooks_Incident.md`), et le bilan `docs/Bilan_Maturite_Conformite.md`.
 
 ## Étape 0. Orientation : le projet, son but et ses règles
 
@@ -100,11 +100,11 @@ Exercice. Construisez trois panneaux, utilisation processeur, mémoire disponibl
 
 Rôle. Profilage continu. Il montre, fonction par fonction, où le processeur et la mémoire sont consommés, sous forme de graphe de flammes, et se relie aux traces.
 
-À maîtriser. La lecture d'un graphe de flammes ; l'idée du lien trace vers profil, qui répond non seulement à quelle requête est lente mais à quelle ligne de code la ralentit. C'est le lot de backlog dédié au SDK Pyroscope.
+À maîtriser. La lecture d'un graphe de flammes ; l'idée du lien trace vers profil, qui répond non seulement à quelle requête est lente mais à quelle ligne de code la ralentit. Le SDK Pyroscope est déjà en place sur units-service, décrit dans `demo/units-service/README.md`.
 
 Référence. La documentation grafana.com sur Pyroscope.
 
-Exercice. Une fois le SDK branché, ouvrez un graphe de flammes et identifiez la fonction la plus coûteuse.
+Exercice. Ouvrez le graphe de flammes de units-service dans la source Pyroscope et identifiez la fonction la plus coûteuse ; puis, depuis une trace lente dans Tempo, suivez le lien vers son profil.
 
 ### GlitchTip
 
@@ -148,7 +148,7 @@ Exercice. Reproduisez l'alerte du lot d'alerting, faites varier un seuil de burn
 
 ## Étape 6. Mise à l'échelle et production
 
-Vous saurez le projet de bout en bout quand vous saurez aussi comment il grandit et ce qui lui manque pour la production. Étudiez la section 7 du document maître : le mono serveur et ses limites en 7.1, le passage à Kubernetes et à Mimir pour la rétention longue et le multi locataire en 7.2, la rétention et la discipline de cardinalité en 7.3, le durcissement avant exposition en 7.4, la résilience et la question du surveillant du surveillant en 7.5. Terminez par le bilan de maturité, qui liste les écarts restants et l'ordre pour les combler. Le plan de correction en cours dans le dépôt suit précisément cette liste.
+Vous saurez le projet de bout en bout quand vous saurez aussi comment il grandit et ce qui lui manque pour la production. Étudiez la section 7 du document maître : le mono serveur et ses limites en 7.1, le passage à Kubernetes et à Mimir pour la rétention longue et le multi locataire en 7.2, la rétention et la discipline de cardinalité en 7.3, le durcissement avant exposition en 7.4, la résilience et la question du surveillant du surveillant en 7.5. Terminez par le bilan de maturité, qui liste les écarts et l'ordre pour les combler. Le plan de correction, désormais réalisé, a suivi précisément cette liste ; sa section « Suite donnée » en donne l'état final.
 
 ## Jalons d'expertise
 

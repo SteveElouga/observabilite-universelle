@@ -18,8 +18,12 @@ Implémentation, **pas à pas et versionnée**, de la stack d'observabilité 100
 | `Architecture_Observabilite_Universelle-2.md` | Document d'architecture maître (le « quoi » et le « pourquoi »). La §10 contient le code de référence du socle. |
 | `Architecture_CICD_Universelle.md` | Document CI/CD compagnon (annotations de déploiement, source maps, Renovate). |
 | `README.md` / `CONTEXT.md` / `MEMORY.md` | Gouvernance du projet (ce triptyque). |
-| `.githooks/` + `scripts/install-hooks.sh` | Hooks de protection des branches (règle R7). |
-| `observability/` | L'implémentation exécutable du socle (§10). **À venir** — sur la branche `feature/observability-socle`, voir `MEMORY.md`. |
+| `.githooks/` + `scripts/install-hooks.sh` | Hooks de protection des branches (R7) + scan de secrets gitleaks au commit (`.gitleaks.toml`). |
+| `observability/` | L'implémentation exécutable de la plateforme (§10) : socle complet, `hardening/` (durcissement Caddy TLS), `oneuptime/` (astreinte), configs, règles et SLO. |
+| `demo/units-service`, `demo/units-webapp` | Démonstrations instrumentées (Django, Angular) qui valident la plateforme de bout en bout. |
+| `docs/` | Guide d'intégration, bilan de maturité, parcours d'expertise, modèle de menace, runbooks d'incident. |
+| `SECURITY.md` | Politique de sécurité : signalement de vulnérabilité, gestion des secrets, posture. |
+| `.github/workflows/ci.yml` + `renovate.json` | CI de sécurité (secrets, lint, build, scan de vulnérabilités, SBOM) et mises à jour de dépendances. |
 
 ---
 
@@ -95,6 +99,6 @@ git push -u origin feature/mon-sujet
 
 ---
 
-## Démarrage rapide (une fois le socle implémenté)
+## Démarrage rapide
 
-L'implémentation exécutable vivra dans `observability/` (transcription de la §10 du document maître). Ordre de mise en route : §10.9 du document. État d'avancement : voir `MEMORY.md`.
+L'implémentation exécutable vit dans `observability/` (transcription de la §10 du document maître). Ordre de mise en route : `observability/README.md` (repris de la §10.9). Pour l'état d'avancement et l'historique, voir `MEMORY.md` : le backlog initial est terminé.

@@ -2,6 +2,8 @@
 
 Revue au 20 juillet 2026. Elle confronte l'état réel du dépôt (preuves citées : fichiers et sections) aux attentes d'une application professionnelle : standards d'ingénierie et d'observabilité, complétude de la documentation, posture de sécurité, position vis à vis de SOC 2, et cohérence de la trajectoire. Le ton est volontairement franc. Ce qui va bien est crédité, ce qui manque est nommé sans détour.
 
+> **Mise à jour du 20 juillet 2026 (après-midi).** Cette revue est l'instantané du **matin**, avant l'exécution du plan de correction. Depuis, les lots **S1 à S4 et la gouvernance R8** ont soldé l'essentiel des écarts décrits plus bas : scan de secrets (gitleaks en pre-commit et en intégration continue), conteneurs sans privilège, verrou de dépendances versionné, **dossier de sécurité** (`SECURITY.md`, `docs/Modele_Menace.md`, `docs/Runbooks_Incident.md`), **durcissement** (`observability/hardening/` : reverse proxy Caddy TLS, ports dépubliés, sauvegarde), **CI de sécurité** (`.github/workflows/ci.yml` : lint, build, scan de vulnérabilités, SBOM) et **protections de branches actives** (MR obligatoire, CI verte requise, historique linéaire). Le constat ci-dessous reste valable comme photographie de départ ; l'état à jour figure dans la section **« Suite donnée »** en fin de document et dans `MEMORY.md`. Seul demeure ouvert, volontairement hors périmètre, le **volet organisationnel** (politiques écrites, évaluation de risque formelle).
+
 ## Résumé exécutif
 
 Le projet est solide sur ce qu'il prétend être aujourd'hui : une plateforme d'observabilité de laboratoire, construite avec des choix techniques modernes, une gouvernance stricte et une documentation nourrie. Sur ce périmètre, la maturité est réelle et supérieure à la moyenne.
@@ -79,3 +81,21 @@ Sur l'ordonnancement, les priorités 1 et 2 sont des gains immédiats et peu co�
 ## Conclusion
 
 Le travail accompli est de bonne facture et la méthode est saine. Pour une plateforme d'observabilité de laboratoire, les standards d'ingénierie sont respectés, la documentation est riche et à jour, la gouvernance est réfléchie et la progression est cohérente. La franchise impose toutefois de distinguer deux plans. Sur le plan de l'observabilité et de la conduite de projet, le niveau est élevé. Sur le plan de la sécurité d'exploitation et de la conformité, le projet est au début du chemin : les mécanismes ne sont pas encore en place, aucun n'est en place par accident, tout est planifié, mais rien n'est fait. Répondre oui aux questions de sécurité et de conformité SOC 2 supposera d'exécuter le durcissement, d'activer réellement la gouvernance distante, de mettre en place l'intégration continue avec ses contrôles, et, si SOC 2 est visé pour de bon, d'ouvrir le volet organisationnel correspondant. Les priorités 1 et 2 du registre sont le meilleur point de départ, car elles coûtent peu et rapprochent aussitôt le dépôt de ce qu'il affiche déjà vouloir être.
+
+## Suite donnée (mise à jour du 20 juillet 2026, après-midi)
+
+Le plan de correction issu de ce bilan a été exécuté le jour même. Voici l'état du registre des écarts ci-dessus, mis à jour.
+
+| Priorité | Écart | État |
+|---|---|---|
+| 1 | Scan de secrets local (gitleaks en pre-commit) | ✅ Fait (S1) — `.githooks/pre-commit` + `.gitleaks.toml`, doublé en CI. |
+| 2 | Protections de branches GitHub (R8) | ✅ Fait — `develop` et `main` protégées : MR obligatoire, CI verte requise, historique linéaire, `enforce_admins`. |
+| 3 | Durcissement réseau et TLS (reverse proxy, ports non publiés) | ✅ Fait (S3) — surcouche `observability/hardening/` : Caddy TLS, ports internes dépubliés. |
+| 4 | Authentification et SSO Grafana, cloisonnement des backends | 🟡 Cadre livré — backends dépubliés, joignables via Grafana seul ; SSO et auth restent une action de déploiement, documentée dans `hardening/README.md`. |
+| 5 | CI avec tests, scan de dépendances et d'images, SBOM | ✅ Fait (S4) — `.github/workflows/ci.yml` : gitleaks, lint, build, Trivy, SBOM Syft. La CI a d'ailleurs immédiatement détecté et fait corriger un CVE critique (Django). |
+| 6 | Conteneur frontend non-root et verrou de dépendances versionné | ✅ Fait (S1) — `units-webapp` en nginx non-root, `package-lock.json` versionné (`npm ci`). |
+| 7 | SECURITY.md, modèle de menace, runbooks d'incident | ✅ Fait (S2) — `SECURITY.md`, `docs/Modele_Menace.md` (STRIDE), `docs/Runbooks_Incident.md`. |
+| 8 | Chiffrement au repos et sauvegarde automatisée | 🟡 Partiel — `hardening/backup.sh` livré, chiffrement au repos documenté au niveau hôte ; planification cron et choix du chiffrement restent des actions d'exploitation. |
+| 9 | Évaluation de risque et politiques écrites (volet organisationnel) | ⚪ Ouvert, volontairement hors périmètre technique. |
+
+Sur les neuf écarts, six sont entièrement soldés, deux le sont sur leur part outillée (le reste relevant de décisions d'exploitation), et seul le volet organisationnel demeure, par choix. La réponse aux questions de sécurité a donc nettement évolué depuis l'instantané du matin : la plateforme dispose désormais des mécanismes techniques de base ; il reste à les activer pleinement lors d'un déploiement réel.

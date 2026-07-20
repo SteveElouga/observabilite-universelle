@@ -2,7 +2,7 @@
 
 Transcription exécutable de la **§10** du document maître [`../Architecture_Observabilite_Universelle-2.md`](../Architecture_Observabilite_Universelle-2.md) — stack LGT (Loki · Grafana · Tempo) + Prometheus, Pyroscope, GlitchTip, Uptime Kuma, Alertmanager, Alloy et OTel Collector. 100 % gratuit, auto-hébergé.
 
-> ⚠ **Configuration de lab** : ports publiés, pas de TLS ni d'authentification inter-services. Avant toute exposition réelle, appliquer le durcissement **§7.4** (prévu : branche `feature/hardening`).
+> ⚠ **Configuration de lab** : ports publiés, pas de TLS ni d'authentification inter-services. Avant toute exposition réelle, appliquer le durcissement **§7.4**, dont une mise en œuvre de référence est fournie dans **`hardening/`** (reverse proxy Caddy TLS, ports dépubliés ; voir `hardening/README.md`).
 
 ## Arborescence
 
@@ -19,13 +19,16 @@ observability/
 │       ├── probes.yml                 # alertes de sonde Blackbox (ProbeDown, cert TLS)
 │       └── (rules-slo.yml)            # SLO multi-burn-rate : généré par sloth, hors Git
 ├── alertmanager/
-│   ├── alertmanager.yml               # webhook Slack via api_url_file
-│   └── secrets/
-│       └── slack_webhook_url.example  # → créer slack_webhook_url (hors Git)
+│   ├── alertmanager.yml               # receivers Slack + page-oncall (webhook OneUptime)
+│   └── secrets/                       # webhooks réels hors Git ; seuls les .example versionnés
+│       ├── slack_webhook_url.example
+│       └── oneuptime_webhook_url.example
 ├── loki-config.yaml
 ├── tempo-config.yaml                  # sans metrics_generator (fait au Collector)
 ├── blackbox.yml                       # modules de sonde en boîte noire (http_local, http_2xx)
 ├── uptime-kuma/                       # sonde externe hébergée hors infra (README + compose dédié)
+├── oneuptime/                         # astreinte OneUptime hors infra (README : escalade, câblage)
+├── hardening/                         # durcissement §7.4 : Caddy TLS, ports dépubliés, backup.sh
 ├── grafana/provisioning/datasources/
 │   └── datasources.yaml               # LA corrélation : métrique→trace→log→profil (§10.5)
 ├── k6/smoke.js                        # parcours synthétique (§10.7)
@@ -43,8 +46,8 @@ observability/
 | 4 | Depuis la trace → « logs de ce span » ; depuis un log → « Voir la trace » | **La corrélation fonctionne dans les deux sens** |
 | 5 | Charger le dashboard 1860 (Node Exporter Full), créer l'écran RED (§5) | Exemplars visibles sur les courbes de latence |
 | 6 | `sloth generate -i slo/units-service.yml -o prometheus/rules/rules-slo.yml` puis redémarrer Prometheus ; couper le service 2 min | L'alerte burn-rate part vers Slack |
-| 7 | Déployer Uptime Kuma hors infra (`uptime-kuma/README.md`) + brancher les jobs CI (annotations, source maps — doc CI/CD §10) | Sonde externe verte ; trait « deploy » visible sur les courbes |
-| 8 | *(phase 4)* SDK Pyroscope (§10.1) + receiver Alertmanager → OneUptime (§10.6) | Flame graph continu ; escalade jusqu'au téléphone |
+| 7 | Sondes externes hors infra : Uptime Kuma (`uptime-kuma/README.md`) et astreinte OneUptime (`oneuptime/README.md`) | Sonde externe verte ; une alerte `page` ouvre un incident OneUptime |
+| 8 | Profiling continu déjà branché sur units-service (Pyroscope, §10.1) ; pour exposer la plateforme, appliquer `hardening/` | Flame graph et saut trace→profil dans Grafana ; accès en TLS derrière Caddy |
 
 Ports : Grafana **3000** · Prometheus **9090** · Alertmanager **9093** · Loki **3100** · Tempo **3200** · Pyroscope **4040** · Collector **4317/4318** · Alloy/Faro **12347** · Uptime Kuma **3001** · GlitchTip **8000**.
 
@@ -55,6 +58,6 @@ Ports : Grafana **3000** · Prometheus **9090** · Alertmanager **9093** · Loki
 3. **Télémétrie du Collector sur `0.0.0.0:8888`** — depuis les versions récentes, le Collector n'expose ses métriques internes que sur `localhost` ; sans ce réglage, le job Prometheus `otel-collector` (écran 12) ne collecte rien.
 4. **Alloy : label `container` + traces Faro via le Collector** — sans relabel, les flux Loki n'ont aucun sélecteur exploitable ; et les traces frontend passent par le Collector (règle §3) pour bénéficier du tail sampling et des métriques dérivées.
 
-## À venir (backlog `MEMORY.md`)
+## Fait, et ce qui reste
 
-Dashboards RED/USE as-code (provisioning), OneUptime (astreinte, machine séparée), profiling Pyroscope (§10.1), durcissement §7.4, CI/CD (§10).
+Le backlog initial est terminé : socle, démos instrumentées, alerting RED/SLO, sondes externes, astreinte OneUptime, profiling Pyroscope, durcissement (`hardening/`) et CI de sécurité (`../.github/workflows/ci.yml`). Restent, pour la montée en charge : les dashboards RED/USE en as-code (provisioning Grafana) et le passage à Kubernetes avec Mimir (§7.2). Détail dans `MEMORY.md`.
