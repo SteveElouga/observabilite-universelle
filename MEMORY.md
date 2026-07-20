@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1..#6, `docs` (bilan/parcours), lot S1 (durcissement local) et le renommage `units-webapp` mergés dans `develop`** (`6674d33`). **Lot S2 (dossier de sécurité)** en cours sur `docs/dossier-securite`.
-- **Branches** : `develop` = tout ce qui précède (`6674d33`). `main` au bootstrap. `docs/dossier-securite` (depuis `develop`) en cours.
-- **Prochaine action** : MR S2 → `develop` ; puis S3 = durcissement infra (#9), S4 = CI/CD sécurité (#10). **Action utilisateur** : activer les protections de branches GitHub (R8).
+- **Étape** : **#1..#6, docs (bilan/parcours), S1 (durcissement local) et le renommage `units-webapp` mergés dans `develop`** (`6674d33`). Lot S2 (dossier de sécurité) commité sur `docs/dossier-securite`. **Lot S3 (durcissement infra)** en cours sur `feature/hardening`.
+- **Branches** : `develop` = tout jusqu'au renommage (`6674d33`). `main` au bootstrap. `docs/dossier-securite` (S2) et `feature/hardening` (S3, chaîné sur S2, à rebaser après S2) prêtes pour MR.
+- **Prochaine action** : MR S2 puis S3 → `develop` ; puis S4 = CI/CD sécurité (#10). **Action utilisateur** : activer les protections de branches GitHub (R8, commandes `gh` fournies).
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -23,7 +23,7 @@
 | 6 | ✅ **Fait (20/07/2026)** — Sondes externes. Blackbox : module `http_local` (sans SSL) + cibles réelles (santé plateforme grafana/prometheus/loki/tempo + endpoints démo), gabarit HTTPS prod commenté. Alertes de sonde (`prometheus/rules/probes.yml` : ProbeDown, ProbeSlow, cert TLS). `k6/smoke.js` réécrit sur la démo locale. Uptime Kuma : pattern **hors infra** documenté (`uptime-kuma/README.md` + `docker-compose.external.yml`), service in-compose marqué dev-only. **Recette validée** (k6 100 % vert, p95 14 ms ; 6 cibles Blackbox UP). Mergé (`b0c69b7`). | `feature/uptime-externe` | §10.7, §7.5 |
 | 7 | Phase 4 — astreinte : OneUptime (machine séparée) + receiver webhook Alertmanager | `feature/oneuptime` | §4.11, §10.6 |
 | 8 | Phase 4 — profiling : SDK Pyroscope Django + lien trace→profil (`pyroscope-otel`) | `feature/pyroscope-sdk` | §10.1, §10.5 |
-| 9 | Durcissement avant exposition : reverse proxy TLS, auth, ports non publiés, secrets | `feature/hardening` | §7.4 |
+| 9 | ✅ **Fait (20/07/2026)** — Durcissement avant exposition (= lot S3, `observability/hardening/`) : surcouche `docker-compose.hardening.yml` (reverse proxy **Caddy** TLS + ports internes dépubliés via `!override []`), `Caddyfile` (TLS local interne / Let's Encrypt en prod ; Grafana, GlitchTip, Faro exposés ; accès admin backends en basic auth commentés), `backup.sh` (sauvegarde grafana-data/gt-db/kuma-data), `README` (usage local/prod, restriction CORS Alloy, chiffrement au repos, SSO Grafana). Recette Mac à faire. | `feature/hardening` | §7.4 |
 | 10 | CI/CD : annotations de déploiement + upload source maps + Renovate | `feature/cicd-hooks` | doc CI/CD §10 |
 | S1 | ✅ **Fait (20/07/2026)** — Enablers de sécurité locale : gitleaks en pre-commit (+ `.gitleaks.toml`), units-webapp non-root (nginx unprivileged, 8080), verrou de dépendances (`npm ci` + `package-lock.json`). Mergé. | `feature/durcissement-securite` | Bilan §sécurité |
 | S2 | ✅ **Fait (20/07/2026)** — Dossier de sécurité documentaire : `SECURITY.md` (politique + signalement + secrets), `docs/Modele_Menace.md` (STRIDE, frontières, tableau priorisé), `docs/Runbooks_Incident.md` (un playbook par alerte + panne plateforme). | `docs/dossier-securite` | Bilan §documentation |
@@ -41,6 +41,15 @@
 | 2026-07-20 | Décision | Steve (questionnaire) : renommer la démo frontend `mir-webapp` → `units-webapp` (paire avec `units-service`), et **étendre** le renommage aux exemples du document CI/CD pour la cohérence globale. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-20 — Session Claude : lot S3 — durcissement infra (surcouche Caddy)
+- Sur `feature/hardening` (chaîné sur `docs/dossier-securite`, à rebaser après le merge de S2). Nouveau dossier `observability/hardening/`, aucune modification du compose de base (durcissement opt-in).
+- **Reverse proxy Caddy** (`docker-compose.hardening.yml` + `Caddyfile`) : point d'entrée unique en TLS. Grafana, GlitchTip et le point de collecte Faro exposés en HTTPS ; Prometheus/Loki/Tempo/Pyroscope/Alertmanager **dépubliés** (`ports: !override []`, joignables seulement via Grafana sur le réseau Docker). Local : `*.localhost` + `tls internal`. Prod : domaines réels + Let's Encrypt automatique. Accès admin direct aux backends via basic auth, laissé commenté.
+- **Sauvegarde** (`backup.sh`) : archive `grafana-data`, `gt-db`, `kuma-data` (état non reconstructible depuis le dépôt) ; télémétrie volontairement non sauvegardée (§7.5). À planifier par cron.
+- **README durcissement** : usage local vs prod, restriction des origines Faro (`cors_allowed_origins`), rôles et SSO Grafana, chiffrement au repos au niveau de l'hôte (LUKS ou stockage chiffré).
+- `.gitignore` : exclusion de `observability/hardening/backups/`.
+- **Prérequis** : Docker Compose >= 2.24 (tag `!override`). **Recette Mac** : `docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d`, puis accès `https://grafana.localhost`.
+- **Reste** : MR S3. Ensuite S4 (CI/CD sécurité, #10) et R8.
 
 ### 2026-07-20 — Session Claude : lot S2 — dossier de sécurité documentaire
 - Sur `docs/dossier-securite`, depuis `develop` complet (`6674d33`, renommage inclus). Trois nouveaux documents, aucune modification de code.

@@ -12,6 +12,9 @@ observability/prometheus/rules/rules-slo.yml
 observability/**/data/
 observability/**/*.local.*
 
+# --- Sorties de sauvegarde (durcissement) ---
+observability/hardening/backups/
+
 # --- OS / éditeurs ---
 .DS_Store
 Thumbs.db
