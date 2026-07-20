@@ -4,3 +4,5 @@ gunicorn==23.0.0
 opentelemetry-distro==0.50b0
 opentelemetry-exporter-otlp==1.29.0
 python-json-logger==3.2.1
+pyroscope-io==1.1.0      # profiling continu (§10.1) — py-spy embarqué
+pyroscope-otel==1.1.0    # lien trace -> profil : PyroscopeSpanProcessor (§10.5)

@@ -15,6 +15,23 @@ errorlog = "-"
 
 
 def post_fork(server, worker):
-    """À plus d'un worker, ré-initialiser ici le SDK OTel plutôt que via le wrapper.
-    Laissé vide en mono-worker (le wrapper suffit)."""
-    pass
+    """Profiling continu par worker (§10.1) + lien trace vers profil (§10.5).
+
+    Pyroscope échantillonne le processus avec py-spy : il faut donc l'initialiser APRÈS le
+    fork, dans chaque worker (l'initialiser dans le maître laisserait un état cassé après fork).
+    On ajoute ensuite le PyroscopeSpanProcessor au tracer provider déjà mis en place par
+    l'auto-instrumentation : il pose l'attribut `pyroscope.profile.id` sur le span racine, ce qui
+    permet le saut trace -> profil dans Grafana (datasource Tempo, tracesToProfiles).
+    """
+    import os
+
+    import pyroscope
+    from opentelemetry import trace
+    from pyroscope.otel import PyroscopeSpanProcessor
+
+    pyroscope.configure(
+        app_name=os.environ.get("OTEL_SERVICE_NAME", "units-service"),
+        server_address=os.environ.get("PYROSCOPE_SERVER_ADDRESS", "http://pyroscope:4040"),
+        sample_rate=100,
+    )
+    trace.get_tracer_provider().add_span_processor(PyroscopeSpanProcessor())

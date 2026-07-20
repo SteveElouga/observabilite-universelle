@@ -39,8 +39,16 @@ curl http://localhost:8088/sante/               # sonde de vivacité
 
 Note sur l'échantillonnage : une trace de `/demo/commande` est rapide et sans erreur, donc seule une fraction est conservée par le tail sampling du Collector. Répétez l'appel plusieurs fois pour en voir apparaître. Les métriques et les logs, eux, remontent toujours.
 
+## Profiling continu (Pyroscope, §10.1 et §10.5)
+
+En plus des trois signaux, le service pousse un **profil de performance continu** vers Pyroscope. Le SDK `pyroscope-io` échantillonne la pile d'exécution et envoie les profils à `pyroscope:4040`. Comme Pyroscope s'appuie sur py-spy pour lire la pile du processus, le conteneur reçoit la capacité `SYS_PTRACE` et le SDK est initialisé dans le hook `post_fork` de gunicorn, une fois par worker, car l'initialiser avant le fork laisserait un état cassé.
+
+Le paquet `pyroscope-otel` ajoute un `PyroscopeSpanProcessor` au tracer provider de l'auto-instrumentation. Il pose l'attribut `pyroscope.profile.id` sur le span racine de chaque trace, ce qui crée le **lien trace vers profil** : depuis une trace lente dans Tempo, on saute au profil correspondant dans Pyroscope grâce à `tracesToProfiles`, déjà configuré dans les datasources Grafana (§10.5). Autrement dit, on ne répond plus seulement à « quelle requête est lente » mais à « quelle fonction la ralentit ».
+
+Dans Grafana, ouvrez la source Pyroscope pour voir le graphe de flammes de `units-service`, ou partez d'une trace dans Tempo et suivez le lien vers son profil.
+
 ## Notes
 
 Ce service tourne ici dans le même compose que la plateforme, par simplicité. Un vrai projet **externe et indépendant** se brancherait plutôt par un réseau Docker partagé ou un point d'entrée stable, comme décrit dans le guide `docs/Guide_Utilisation_Plateforme_Observabilite.md`, section « Brancher un projet ».
 
-Gunicorn tourne avec un seul worker : en mono-worker, le wrapper `opentelemetry-instrument` suffit. Pour passer à plusieurs workers, initialisez le SDK dans le hook `post_fork` de `gunicorn.conf.py` (les exporters OpenTelemetry n'aiment pas le fork).
+Gunicorn tourne avec un seul worker. Le hook `post_fork` de `gunicorn.conf.py` initialise Pyroscope par worker ; le même endroit sert à ré-initialiser le SDK OpenTelemetry si vous passez à plusieurs workers, car les exporters n'aiment pas le fork.

@@ -32,8 +32,10 @@ services:
       OTEL_METRICS_EXPORTER: otlp
       OTEL_LOGS_EXPORTER: none          # les logs partent en stdout JSON, récupérés par Alloy
       UNITS_SECRET_KEY: ${UNITS_SECRET_KEY:-demo-insecure-change-me}
+      PYROSCOPE_SERVER_ADDRESS: http://pyroscope:4040   # profiling continu (§10.1)
     ports: ["8088:8000"]               # 8000 est déjà pris par GlitchTip
-    depends_on: [otel-collector]
+    cap_add: ["SYS_PTRACE"]            # py-spy (Pyroscope) doit lire la pile du processus dans le conteneur
+    depends_on: [otel-collector, pyroscope]
 
   # ---- DÉMO (profil "demo") : frontend Angular instrumenté Faro + GlitchTip (§10.2) ----
   # nginx sert l'app et proxifie /api vers units-service (même origine -> traceparent transmis,
