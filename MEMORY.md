@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **#1..#6, docs (bilan/parcours), S1 (durcissement local) et le renommage `units-webapp` mergés dans `develop`** (`6674d33`). Lot S2 (dossier de sécurité) commité sur `docs/dossier-securite`. **Lot S3 (durcissement infra)** en cours sur `feature/hardening`.
-- **Branches** : `develop` = tout jusqu'au renommage (`6674d33`). `main` au bootstrap. `docs/dossier-securite` (S2) et `feature/hardening` (S3, chaîné sur S2, à rebaser après S2) prêtes pour MR.
-- **Prochaine action** : MR S2 puis S3 → `develop` ; puis S4 = CI/CD sécurité (#10). **Action utilisateur** : activer les protections de branches GitHub (R8, commandes `gh` fournies).
+- **Étape** : **#1..#6, docs, S1, renommage `units-webapp`, S2 (dossier sécurité) et S3 (durcissement infra) mergés dans `develop`** (`53a643b`). **Lot S4 (CI/CD sécurité)** en cours sur `feature/cicd-securite`. Plan de correction quasi terminé : reste l'action utilisateur R8.
+- **Branches** : `develop` = tout jusqu'à S3 (`53a643b`). `main` au bootstrap. `feature/cicd-securite` (S4, depuis `develop`) prête pour MR.
+- **Prochaine action** : MR S4 → `develop` ; activer la CI comme required status check dans R8. Backlog restant hors correction : #7 (astreinte OneUptime), #8 (Pyroscope SDK).
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -24,11 +24,11 @@
 | 7 | Phase 4 — astreinte : OneUptime (machine séparée) + receiver webhook Alertmanager | `feature/oneuptime` | §4.11, §10.6 |
 | 8 | Phase 4 — profiling : SDK Pyroscope Django + lien trace→profil (`pyroscope-otel`) | `feature/pyroscope-sdk` | §10.1, §10.5 |
 | 9 | ✅ **Fait (20/07/2026)** — Durcissement avant exposition (= lot S3, `observability/hardening/`) : surcouche `docker-compose.hardening.yml` (reverse proxy **Caddy** TLS + ports internes dépubliés via `!override []`), `Caddyfile` (TLS local interne / Let's Encrypt en prod ; Grafana, GlitchTip, Faro exposés ; accès admin backends en basic auth commentés), `backup.sh` (sauvegarde grafana-data/gt-db/kuma-data), `README` (usage local/prod, restriction CORS Alloy, chiffrement au repos, SSO Grafana). Recette Mac à faire. | `feature/hardening` | §7.4 |
-| 10 | CI/CD : annotations de déploiement + upload source maps + Renovate | `feature/cicd-hooks` | doc CI/CD §10 |
+| 10 | ✅ **Fait (20/07/2026)** — CI/CD sécurité (= lot S4, `.github/workflows/ci.yml`) : jobs gitleaks (secrets), lint (yamllint + hadolint + promtool + `compose config`), build (units-webapp `npm ci` + build, units-service `manage.py check`), scan (Trivy fs HIGH/CRITICAL + SBOM Syft CycloneDX). `renovate.json` (mises à jour de dépendances). Sur MR vers develop/main. À brancher dans R8 comme required status check. Reste possible plus tard : annotations de déploiement + source maps (doc CI/CD). | `feature/cicd-securite` | doc CI/CD §10 |
 | S1 | ✅ **Fait (20/07/2026)** — Enablers de sécurité locale : gitleaks en pre-commit (+ `.gitleaks.toml`), units-webapp non-root (nginx unprivileged, 8080), verrou de dépendances (`npm ci` + `package-lock.json`). Mergé. | `feature/durcissement-securite` | Bilan §sécurité |
 | S2 | ✅ **Fait (20/07/2026)** — Dossier de sécurité documentaire : `SECURITY.md` (politique + signalement + secrets), `docs/Modele_Menace.md` (STRIDE, frontières, tableau priorisé), `docs/Runbooks_Incident.md` (un playbook par alerte + panne plateforme). | `docs/dossier-securite` | Bilan §documentation |
 
-> **Plan de correction (bilan 2026-07-20, tous points sauf le volet organisationnel)** : S1 et S2 ci-dessus ; **S3 = durcissement infra (#9)** (TLS reverse proxy, auth backends, ports non publiés, chiffrement au repos, sauvegarde) ; **S4 = CI/CD sécurité (#10)** (tests, scan dépendances et images, SBOM, gitleaks en CI) ; **R8 = action utilisateur** (protections de branches GitHub).
+> **Plan de correction (bilan 2026-07-20) — TERMINÉ côté implémentation** : S1 (enablers locaux), S2 (dossier sécurité), S3 (durcissement infra, #9) et S4 (CI/CD sécurité, #10) faits et commités. **Reste l'action utilisateur R8** (protections de branches GitHub, commandes `gh` fournies), plus le volet organisationnel du registre (point #9 : politiques et évaluation de risque), volontairement hors périmètre.
 
 ## Décisions & exceptions consignées
 
@@ -41,6 +41,13 @@
 | 2026-07-20 | Décision | Steve (questionnaire) : renommer la démo frontend `mir-webapp` → `units-webapp` (paire avec `units-service`), et **étendre** le renommage aux exemples du document CI/CD pour la cohérence globale. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-20 — Session Claude : lot S4 — CI/CD sécurité (GitHub Actions)
+- Sur `feature/cicd-securite`, depuis `develop` complet (`53a643b`, S2 et S3 mergés). Clôt le plan de correction issu du bilan.
+- **`.github/workflows/ci.yml`** (MR vers develop/main + push + manuel), quatre jobs : `secrets` (gitleaks en `--no-git` sur l'arbre, config `.gitleaks.toml`) ; `lint` (yamllint, hadolint sur les deux Dockerfiles, `promtool check rules` sur red.yml + probes.yml, `docker compose config` base et durcissement) ; `build` (units-webapp `npm ci` + build Angular, units-service `pip install` + `manage.py check`) ; `scan` (Trivy fs HIGH/CRITICAL, `ignore-unfixed`, plus SBOM Syft CycloneDX publié en artefact).
+- **`renovate.json`** : mises à jour de dépendances groupées (images Docker, Python, npm, actions GitHub) ; s'active si l'app Renovate est installée sur le dépôt.
+- **À faire côté GitHub** : après le premier run, ajouter les jobs comme *required status checks* dans la protection de `develop` (R8) pour imposer la CI verte. Le gitleaks du hook `pre-commit` est ainsi doublé côté serveur.
+- **Reste** : MR S4. Le plan de correction (hors volet organisationnel) est terminé.
 
 ### 2026-07-20 — Session Claude : lot S3 — durcissement infra (surcouche Caddy)
 - Sur `feature/hardening` (chaîné sur `docs/dossier-securite`, à rebaser après le merge de S2). Nouveau dossier `observability/hardening/`, aucune modification du compose de base (durcissement opt-in).
