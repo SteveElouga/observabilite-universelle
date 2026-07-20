@@ -11,4 +11,21 @@ case "$branch" in
     exit 1
     ;;
 esac
+
+# Scan de secrets sur les changements indexés (gitleaks) — enabler de sécurité (bilan §sécurité).
+# Ajout du bloc autorisé par décision du propriétaire, consignée dans MEMORY.md (2026-07-20, R13) :
+# c'est un RENFORCEMENT du hook, jamais un contournement des protections de branches.
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --redact >/dev/null 2>&1; then
+    echo "" >&2
+    echo "⛔ COMMIT REFUSÉ : gitleaks a détecté un secret potentiel dans les changements indexés." >&2
+    echo "   Détail   : gitleaks protect --staged --redact --verbose" >&2
+    echo "   Exception maîtrisée ? Déclarez-la dans .gitleaks.toml (allowlist)." >&2
+    echo "" >&2
+    exit 1
+  fi
+else
+  echo "⚠ gitleaks non installé : scan de secrets ignoré. Installez-le (brew install gitleaks) pour activer la protection locale." >&2
+fi
+
 exit 0

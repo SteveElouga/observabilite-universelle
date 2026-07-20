@@ -1,0 +1,18 @@
+# .gitleaks.toml — scan de secrets (hook pre-commit local et futur job CI).
+# Hérite des règles par défaut de gitleaks et ajoute des exceptions maîtrisées pour les
+# fichiers d'exemple, qui ne contiennent que des placeholders neutres, jamais de vrai secret.
+title = "gitleaks — observabilite-universelle"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exceptions maîtrisées : fichiers d'exemple et placeholders explicites"
+paths = [
+  '''\.example$''',
+]
+regexes = [
+  '''REMPLACEZ_PAR_[A-Z_]+''',
+  '''changez-moi''',
+  '''demo-insecure-change-me''',
+]
