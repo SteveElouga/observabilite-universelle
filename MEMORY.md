@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **Plan de correction TERMINÉ (S1..S4 + R8)**. Phase 4 : **#7 (astreinte OneUptime) mergé** dans `develop`, **#8 (Pyroscope SDK) fait** sur `feature/pyroscope-sdk` (en cours de MR). Une fois #8 mergé, **tout le backlog initial est traité**.
-- **Branches** : `develop` = `30e4ef5` (avec #7), **protégé (R8)**. `main` au bootstrap. En attente de MR : `feature/pyroscope-sdk` (#8). Tout changement passe par MR + CI verte, propriétaire inclus.
-- **Prochaine action** : MR #8 → `develop`. Ensuite, plus de backlog ; restent les « à venir » du document (Mimir/K8s à l'échelle, dashboards RED/USE as-code).
+- **Étape** : **Backlog initial TERMINÉ et intégralement mergé dans `develop`** (`4ed4d7f`) : socle, démos units-service/units-webapp, alerting RED/SLO, sondes externes, plan de correction du bilan (S1..S4 + R8), astreinte OneUptime (#7), profiling Pyroscope (#8). Plus aucune branche de travail en attente.
+- **Branches** : `develop` = `4ed4d7f`, **protégé (R8 actif)** : MR obligatoire, CI verte requise, historique linéaire, `enforce_admins`. `main` au bootstrap.
+- **Prochaine action** : plus de backlog initial. Évolutions « à venir » du document maître, hors périmètre : dashboards RED/USE as-code (provisioning Grafana), montée à l'échelle Kubernetes + Mimir (§7.2). Reste aussi le volet organisationnel du bilan (politiques, évaluation de risque), volontairement hors périmètre.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -41,6 +41,17 @@
 | 2026-07-20 | Décision | Steve (questionnaire) : renommer la démo frontend `mir-webapp` → `units-webapp` (paire avec `units-service`), et **étendre** le renommage aux exemples du document CI/CD pour la cohérence globale. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-20 — Session Claude : mise à jour finale de la documentation (backlog bouclé)
+- Backlog initial 100 % mergé dans `develop` (`4ed4d7f`). PR #9 (doublon obsolète de #6) à fermer, PR #19 (#8) mergée.
+- **Audit exhaustif de la doc par sous-agent** : aucune trace résiduelle de `mir-webapp` (renommage complet). 4 fichiers périmés, tous sur le décalage « à venir / à activer » vs « fait ».
+- **Corrections** (branche `docs/mise-a-jour-finale`) :
+  - `README.md` (hors section Règles Git) : table de structure réactualisée (docs/, hardening/, oneuptime/, SECURITY.md, CI) ; « démarrage rapide » au présent.
+  - `observability/README.md` : durcissement livré dans `hardening/` ; arborescence complétée (`hardening/`, `oneuptime/`, secret OneUptime) ; mise en route étapes 7-8 à jour ; section « à venir » réduite aux dashboards as-code + Mimir/K8s.
+  - `docs/Bilan_Maturite_Conformite.md` : encart en tête + section « Suite donnée » (registre soldé : 6/9 faits, 2 partiels, 1 organisationnel ouvert). L'instantané original du matin est conservé.
+  - `docs/Parcours_Expertise_Observabilite.md` : docs de sécurité ajoutés à la liste de référence ; Pyroscope et plan de correction au présent/passé.
+  - `MEMORY.md` : état courant = backlog terminé.
+- **Non touché volontairement** : la section « Règles Git » du `README.md` (R8 « à activer », « ≥1 approbation ») est protégée par R12 ; sa mise à jour attend une décision explicite du propriétaire (R13). Le statut réel (R8 actif, 0 approbation car dépôt solo) est déjà consigné en tête de MEMORY.
 
 ### 2026-07-20 — Session Claude : #8 — profiling continu Pyroscope (units-service)
 - Sur `feature/pyroscope-sdk` (depuis `develop`, indépendant de #7 ; rebasé sur `develop`+#7 avec réconciliation `MEMORY.md`). Dernier lot du backlog initial.
