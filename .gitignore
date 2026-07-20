@@ -20,6 +20,7 @@ observability/hardening/backups/
 Thumbs.db
 .idea/
 .vscode/
+.obsidian/
 
 # --- Python (instrumentation Django à venir) ---
 __pycache__/

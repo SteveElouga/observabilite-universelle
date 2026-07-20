@@ -43,6 +43,10 @@
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
 
+### 2026-07-20 — Session Claude : hygiène (.gitignore Obsidian)
+- `CONTEXT.md` avait été reformaté par Obsidian dans l'arbre de travail (tableaux réalignés, mais comment de gouvernance en tête supprimé et coquille « référencec » introduite). **Restauré** à sa version commitée ; aucun impact sur l'historique (c'étaient des modifs non commitées).
+- Ajout de `.obsidian/` au `.gitignore` (comme `.idea/`, `.vscode/`) pour ne pas versionner la config de l'éditeur. **Piège à retenir** : désactiver le formatage automatique d'Obsidian pour ce coffre, sinon les `.md` (dont `CONTEXT.md`) seront reformatés à chaque sauvegarde.
+
 ### 2026-07-20 — Session Claude : mise à jour finale de la documentation (backlog bouclé)
 - Backlog initial 100 % mergé dans `develop` (`4ed4d7f`). PR #9 (doublon obsolète de #6) à fermer, PR #19 (#8) mergée.
 - **Audit exhaustif de la doc par sous-agent** : aucune trace résiduelle de `mir-webapp` (renommage complet). 4 fichiers périmés, tous sur le décalage « à venir / à activer » vs « fait ».
