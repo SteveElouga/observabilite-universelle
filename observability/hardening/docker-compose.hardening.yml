@@ -1,7 +1,9 @@
 # docker-compose.hardening.yml — surcouche de durcissement (lot #9 / §7.4).
 #
 # S'applique PAR-DESSUS le compose de base, depuis le dossier observability/ :
-#   docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d
+#   docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d --force-recreate
+# (--force-recreate garantit que Caddy publie ses ports 80/443 : un conteneur Caddy déjà présent
+#  serait sinon réutilisé sans publication. Détails et étape /etc/hosts dans hardening/README.md.)
 #
 # Effet : un reverse proxy Caddy termine le TLS et sert de point d'entrée unique ; les ports des
 # services internes ne sont PLUS publiés sur l'hôte (ils restent joignables entre eux sur le réseau

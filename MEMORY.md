@@ -43,6 +43,12 @@
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
 
+### 2026-07-20 — Session Claude : fix durcissement macOS (accès Grafana via Caddy)
+- Symptôme : Grafana injoignable après application de la surcouche de durcissement (ni `localhost:3000`, ni `https://grafana.localhost`).
+- **Deux pièges macOS identifiés en direct** : (1) le conteneur Caddy ne publiait pas ses ports 80/443 tant qu'il n'était pas recréé — `docker ps` montrait les ports exposés sans `->`, corrigé par `--force-recreate` ; (2) `*.localhost` n'est pas résolu par le système sous macOS/Windows, il faut le déclarer dans `/etc/hosts`. Les deux levés, `curl --resolve` renvoie `HTTP/2 302 → /login via Caddy` : la chaîne TLS + reverse proxy vers Grafana dépublié fonctionne.
+- **Correctif** (`fix/hardening-macos`) : `hardening/README.md` réécrit — étape `/etc/hosts`, lancement avec `--force-recreate`, vérification des ports publiés, section « Dépannage » (test `curl --resolve`, retour à la pile de base). En-tête de `docker-compose.hardening.yml` mis à jour avec `--force-recreate`.
+- Choix : garder 80/443 (URL propres, compatibles Let's Encrypt en prod) plutôt que des ports hauts ; le blocage venait de la recréation du conteneur, pas du port.
+
 ### 2026-07-20 — Session Claude : hygiène (.gitignore Obsidian)
 - `CONTEXT.md` avait été reformaté par Obsidian dans l'arbre de travail (tableaux réalignés, mais comment de gouvernance en tête supprimé et coquille « référencec » introduite). **Restauré** à sa version commitée ; aucun impact sur l'historique (c'étaient des modifs non commitées).
 - Ajout de `.obsidian/` au `.gitignore` (comme `.idea/`, `.vscode/`) pour ne pas versionner la config de l'éditeur. **Piège à retenir** : désactiver le formatage automatique d'Obsidian pour ce coffre, sinon les `.md` (dont `CONTEXT.md`) seront reformatés à chaque sauvegarde.

@@ -8,13 +8,32 @@ Un reverse proxy Caddy devient le point d'entrée unique. Il termine le TLS et n
 
 ## Mise en route
 
-Depuis le dossier `observability/`, appliquez la surcouche par-dessus le compose de base :
+Tout se fait depuis le dossier `observability/`. Docker Compose 2.24 ou plus récent est nécessaire, à cause du tag `!override` qui retire les ports publiés du compose de base.
+
+**1. Déclarer les noms locaux.** Les domaines `*.localhost` ne sont pas résolus automatiquement par le système sous macOS ni Windows (seul un navigateur comme Chrome les mappe parfois vers la boucle locale, et pas toujours). Déclarez les donc explicitement une fois pour toutes :
 
 ```bash
-docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d
+# macOS et Linux
+echo "127.0.0.1 grafana.localhost glitchtip.localhost faro.localhost" | sudo tee -a /etc/hosts
 ```
 
-Accédez ensuite à `https://grafana.localhost`, `https://glitchtip.localhost` et `https://faro.localhost`. En local, Caddy signe avec une autorité de certification qu'il gère lui même, donc le navigateur affiche un avertissement tant que vous ne faites pas confiance à cette racine. C'est attendu en laboratoire. Docker Compose 2.24 ou plus récent est nécessaire, à cause du tag `!override` qui retire les ports publiés du compose de base.
+Sous Windows, ajoutez la même ligne à `C:\Windows\System32\drivers\etc\hosts`.
+
+**2. Démarrer la pile durcie.** Le `--force-recreate` est important : sans lui, un conteneur Caddy déjà présent d'un lancement antérieur peut être réutilisé sans publier ses ports 80 et 443, et plus rien n'est joignable.
+
+```bash
+docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d --force-recreate
+```
+
+Vérifiez que Caddy publie bien ses ports sur l'hôte :
+
+```bash
+docker ps --format "{{.Names}}: {{.Ports}}" | grep caddy
+# attendu : 0.0.0.0:443->443/tcp (et 80). Si vous voyez seulement "80/tcp, 443/tcp"
+# sans la flèche "->", les ports ne sont pas publiés : relancez avec --force-recreate.
+```
+
+**3. Accéder.** Ouvrez `https://grafana.localhost`, `https://glitchtip.localhost` et `https://faro.localhost`. Caddy signe en local avec une autorité de certification qu'il gère lui même : le navigateur affiche un avertissement, cliquez « Paramètres avancés » puis « Continuer ». C'est attendu en laboratoire.
 
 ## Passage en production
 
@@ -37,6 +56,25 @@ Le chiffrement au repos ne se fait pas dans le compose mais au niveau de l'hôte
 ## Sauvegarde
 
 Le script `backup.sh` sauvegarde les volumes à état qui ne sont pas reconstructibles depuis le dépôt, à savoir les tableaux de bord créés à la main, l'historique GlitchTip et la configuration d'Uptime Kuma. Planifiez le sur l'hôte, par exemple chaque nuit. Les données de télémétrie ne sont pas sauvegardées, leur perte étant jugée acceptable ; adaptez ce choix à votre politique. Vérifiez régulièrement qu'une restauration fonctionne, une sauvegarde jamais testée n'est pas une sauvegarde.
+
+## Dépannage : accès impossible
+
+Si `https://grafana.localhost` reste injoignable, testez la chaîne en contournant complètement la résolution de nom :
+
+```bash
+curl -k --resolve grafana.localhost:443:127.0.0.1 https://grafana.localhost -I
+```
+
+- Réponse `HTTP/2 302` vers `/login` (avec `via: ... Caddy`) : Caddy sert correctement Grafana. Il ne manque donc que la résolution du nom, c'est à dire l'étape `/etc/hosts` ci-dessus. Après l'avoir ajoutée, rechargez `https://grafana.localhost`.
+- `Connection refused` : Caddy ne publie pas le port 443 sur l'hôte. Recréez le : `docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d --force-recreate caddy`, puis revérifiez ses ports (`docker ps ... | grep caddy` doit montrer `0.0.0.0:443->443/tcp`).
+- `Could not resolve host` malgré le `--resolve` : très rare ; vérifiez que Docker et le conteneur Caddy tournent (`docker ps | grep caddy`).
+
+Pour revenir simplement à la configuration de laboratoire, avec Grafana directement sur `http://localhost:3000`, arrêtez la pile durcie puis relancez la base seule :
+
+```bash
+docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml down
+docker compose up -d
+```
 
 ## Ce qui reste hors de cette surcouche
 
