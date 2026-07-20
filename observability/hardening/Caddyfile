@@ -1,0 +1,52 @@
+# Caddyfile — reverse proxy TLS et authentification devant la plateforme (lot #9 / §7.4).
+#
+# En local : domaines *.localhost (résolus vers 127.0.0.1) + `tls internal`, une autorité de
+#            certification locale gérée par Caddy. Le navigateur affichera un avertissement tant
+#            que vous ne faites pas confiance à la racine de Caddy ; c'est normal en lab.
+# En prod  : remplacez les domaines par les vôtres et retirez `tls internal`. Caddy provisionne
+#            alors automatiquement un certificat Let's Encrypt (renseignez l'email global ci dessous).
+{
+	# email admin@exemple.com   # requis par Let's Encrypt en prod ; sans effet avec `tls internal`.
+}
+
+# Grafana : l'interface principale a sa propre authentification, Caddy se charge du TLS.
+grafana.localhost {
+	tls internal
+	reverse_proxy grafana:3000
+}
+
+# GlitchTip : a sa propre authentification, Caddy se charge du TLS.
+glitchtip.localhost {
+	tls internal
+	reverse_proxy glitchtip:8000
+}
+
+# Point de collecte du navigateur (Faro) : exposé en TLS. Restreignez EN PLUS les origines
+# acceptées dans `alloy-config.alloy` (cors_allowed_origins) au seul domaine de votre frontend,
+# à la place du `["*"]` de laboratoire.
+faro.localhost {
+	tls internal
+	reverse_proxy alloy:12347
+}
+
+# --- Accès admin direct aux backends (optionnel) ---
+# Par défaut, Prometheus, Loki, Tempo et Alertmanager restent INTERNES : ils ne sont plus publiés
+# sur l'hôte et ne sont accessibles que par Grafana sur le réseau Docker. C'est le réglage le plus
+# sûr. Si vous voulez malgré tout un accès direct, décommentez et protégez le par authentification
+# basique. Générez le hash : docker run --rm caddy:2-alpine caddy hash-password --plaintext 'motdepasse'
+#
+# prometheus.localhost {
+# 	tls internal
+# 	basic_auth {
+# 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+# 	}
+# 	reverse_proxy prometheus:9090
+# }
+#
+# alertmanager.localhost {
+# 	tls internal
+# 	basic_auth {
+# 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+# 	}
+# 	reverse_proxy alertmanager:9093
+# }

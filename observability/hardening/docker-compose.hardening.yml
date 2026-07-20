@@ -1,0 +1,42 @@
+# docker-compose.hardening.yml — surcouche de durcissement (lot #9 / §7.4).
+#
+# S'applique PAR-DESSUS le compose de base, depuis le dossier observability/ :
+#   docker compose -f docker-compose.yml -f hardening/docker-compose.hardening.yml up -d
+#
+# Effet : un reverse proxy Caddy termine le TLS et sert de point d'entrée unique ; les ports des
+# services internes ne sont PLUS publiés sur l'hôte (ils restent joignables entre eux sur le réseau
+# Docker, et depuis l'extérieur uniquement via Caddy). Accès : https://grafana.localhost,
+# https://glitchtip.localhost, https://faro.localhost.
+#
+# Prérequis : Docker Compose >= 2.24 (pour le tag `!override`, qui remplace la liste `ports` du
+# compose de base au lieu de s'y ajouter).
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./hardening/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-admin}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:-}
+    depends_on: [grafana]
+
+  # Dépublication des ports : accessibles seulement via Caddy sur le réseau Docker.
+  grafana:        { ports: !override [] }
+  prometheus:     { ports: !override [] }
+  loki:           { ports: !override [] }
+  tempo:          { ports: !override [] }
+  pyroscope:      { ports: !override [] }
+  alertmanager:   { ports: !override [] }
+  glitchtip:      { ports: !override [] }
+  uptime-kuma:    { ports: !override [] }
+  otel-collector: { ports: !override [] }   # les apps émettent via le réseau Docker ; en prod, OTLP via le proxy TLS
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}
