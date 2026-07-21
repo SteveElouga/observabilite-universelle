@@ -21,7 +21,7 @@ datasources:
       # LOG → TRACE : le trace_id du JSON (§10.1) devient un lien cliquable
       derivedFields:
         - name: TraceID
-          matcherRegex: '"trace_id":"(\w+)"'
+          matcherRegex: '"trace_id":\s*"(\w+)"'   # \s* : le JSON de Python écrit "trace_id": "..." (espace après les deux-points)
           url: '$${__value.raw}'          # $$ = échappement du provisioning Grafana
           datasourceUid: tempo
           urlDisplayLabel: "Voir la trace"
