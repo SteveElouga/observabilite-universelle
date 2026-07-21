@@ -4,9 +4,9 @@
 
 ## État courant *(à maintenir à jour à chaque session)*
 
-- **Étape** : **Backlog initial TERMINÉ et intégralement mergé dans `develop`** (`4ed4d7f`) : socle, démos units-service/units-webapp, alerting RED/SLO, sondes externes, plan de correction du bilan (S1..S4 + R8), astreinte OneUptime (#7), profiling Pyroscope (#8). Plus aucune branche de travail en attente.
+- **Étape** : **Backlog initial TERMINÉ et intégralement mergé dans `develop`** (`4ed4d7f`) : socle, démos units-service/units-webapp, alerting RED/SLO, sondes externes, plan de correction du bilan (S1..S4 + R8), astreinte OneUptime (#7), profiling Pyroscope (#8). Branche de correctif en cours : `fix/loki-trace-derived-field` (pont log→trace, voir journal).
 - **Branches** : `develop` = `4ed4d7f`, **protégé (R8 actif)** : MR obligatoire, CI verte requise, historique linéaire, `enforce_admins`. `main` au bootstrap.
-- **Prochaine action** : plus de backlog initial. Évolutions « à venir » du document maître, hors périmètre : dashboards RED/USE as-code (provisioning Grafana), montée à l'échelle Kubernetes + Mimir (§7.2). Reste aussi le volet organisationnel du bilan (politiques, évaluation de risque), volontairement hors périmètre.
+- **Prochaine action** : pousser et merger `fix/loki-trace-derived-field` (correctif du champ dérivé Loki), puis `docker compose restart grafana`. Ensuite, évolutions « à venir » du document maître, hors périmètre : dashboards RED/USE as-code (provisioning Grafana), montée à l'échelle Kubernetes + Mimir (§7.2). Reste aussi le volet organisationnel du bilan (politiques, évaluation de risque), volontairement hors périmètre.
 - **Remote GitHub** : **configuré** — `github.com/SteveElouga/observabilite-universelle` (privé), 4 branches publiées.
 - **Point de vigilance** : Grafana OnCall est archivé (24/03/2026) — l'astreinte cible est OneUptime (phase 4) ; ne pas réintroduire OnCall.
 - **Particularité du pont cloud→Mac** : la suppression de fichiers y est impossible → les verrous Git périmés sont **déplacés** dans `.git/_stale_locks/` au lieu d'être supprimés. Purger de temps en temps depuis le Mac : `rm -rf .git/_stale_locks`.
@@ -42,6 +42,11 @@
 | 2026-07-20 | **Décision propriétaire (R13)** | Steve autorise la **mise à jour de la règle R8** dans la section « Règles Git » du `README.md` (protégée par R12) : la formuler au présent (protections **actives**) et refléter le réglage réel du dépôt solo (**0 approbation** requise, CI verte + `enforce_admins`). Portée : réécriture de la seule ligne R8, aucune autre règle modifiée. |
 
 ## Journal *(antéchronologique — ajouter chaque nouvelle entrée EN HAUT)*
+
+### 2026-07-21 — Session Claude : correctif pont log→trace (champ dérivé Loki)
+- **Bug trouvé pendant une session d'apprentissage** : le bouton « Voir la trace » n'apparaissait pas sur les logs. Cause : le champ dérivé Loki (`grafana/provisioning/datasources/datasources.yaml`) cherchait `"trace_id":"(\w+)"` (sans espace), alors que les logs JSON de `units-service` s'écrivent `"trace_id": "..."` (espace après les deux-points, défaut de `json.dumps`). La regex ne matchait donc jamais.
+- **Correctif** : `matcherRegex: '"trace_id":\s*"(\w+)"'`. Vérifié en bac à sable : capture bien un vrai `trace_id` (32 hex) et **ignore** les `trace_id` vides des logs `django.request` (émis hors span, donc sans contexte de trace).
+- Branche `fix/loki-trace-derived-field` depuis `develop`. Après merge, recharger le provisioning : `docker compose restart grafana`.
 
 ### 2026-07-20 — Session Claude : fix durcissement macOS (accès Grafana via Caddy)
 - Symptôme : Grafana injoignable après application de la surcouche de durcissement (ni `localhost:3000`, ni `https://grafana.localhost`).
