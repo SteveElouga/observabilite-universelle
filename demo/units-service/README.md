@@ -47,6 +47,8 @@ Le paquet `pyroscope-otel` ajoute un `PyroscopeSpanProcessor` au tracer provider
 
 Dans Grafana, ouvrez la source Pyroscope pour voir le graphe de flammes de `units-service`, ou partez d'une trace dans Tempo et suivez le lien vers son profil.
 
+Pour un profil **spectaculaire**, appelez `/demo/calcul` : cet endpoint brûle volontairement du CPU dans la fonction `_calcul_intensif` (boucle Python pure, bornée par le paramètre `?n=`, défaut 5 M). En le sollicitant en rafale, une seule fonction domine alors tout le graphe de flammes — l'effet classique du profiling qui pointe « la » ligne coûteuse. Les autres endpoints ne calculant presque rien, leur profil CPU reste discret.
+
 ## Notes
 
 Ce service tourne ici dans le même compose que la plateforme, par simplicité. Un vrai projet **externe et indépendant** se brancherait plutôt par un réseau Docker partagé ou un point d'entrée stable, comme décrit dans le guide `docs/Guide_Utilisation_Plateforme_Observabilite.md`, section « Brancher un projet ».
