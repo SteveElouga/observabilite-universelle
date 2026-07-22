@@ -63,3 +63,24 @@ def erreur(request):
     return JsonResponse(
         {"erreur": "500 simulée pour tester les alertes RED/SLO"}, status=500
     )
+
+
+def _calcul_intensif(n):
+    """Boucle volontairement gourmande en CPU, en Python pur (aucun appel natif) :
+    py-spy l'attribue entièrement à CETTE fonction dans le flame graph (démo profiling, §10.1)."""
+    total = 0
+    for i in range(n):
+        total = (total + i * i) % 2147483647
+    return total
+
+
+def calcul(request):
+    """Démo profiling : brûle du CPU dans `_calcul_intensif` pour produire un flame graph
+    parlant (une seule fonction domine la flamme). Paramètre optionnel et borné : `?n=` (défaut 5 M)."""
+    try:
+        n = int(request.GET.get("n", 5_000_000))
+    except (TypeError, ValueError):
+        n = 5_000_000
+    n = max(0, min(n, 50_000_000))
+    resultat = _calcul_intensif(n)
+    return JsonResponse({"resultat": resultat, "iterations": n})
