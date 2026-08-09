@@ -9,12 +9,25 @@
 # CE QU'ELLE CONTIENT — le pipeline de télémétrie, c'est-à-dire ce dont FT-3 a besoin :
 #   OTel Collector · Prometheus · Loki · Tempo · Pyroscope · Grafana · Alertmanager · Alloy
 #   et Caddy devant, qui termine le TLS (durcissement §7.4).
+#   Depuis les dashboards §8.3 et les alertes §8.4, s'y ajoutent trois exportateurs :
+#   node-exporter · blackbox-exporter · postgres_exporter.
 #
-# CE QU'ELLE NE CONTIENT PAS, ET POURQUOI :
-#   · node-exporter        — exige `pid: host` et le montage de `/`. Embarqué, il mesurerait le
-#                            conteneur au lieu de l'hôte : autant ne pas mentir. Reste un service
-#                            à part si les métriques machine sont voulues.
-#   · blackbox-exporter    — sonde depuis l'extérieur ; l'enfermer avec ses cibles ôte son sens.
+# CES TROIS-LÀ ÉTAIENT EXCLUS, ET L'EXCLUSION EST LEVÉE — avec ses réserves intactes :
+#   · node-exporter        — l'objection tenait : embarqué, il mesure le CONTENEUR, pas l'hôte.
+#                            Elle est levée parce que le disque à surveiller ici est /var/lib/obs,
+#                            là où Prometheus, Loki et Tempo écrivent — précisément un volume de
+#                            conteneur. Sans lui, l'alerte disque §8.4 n'avait aucune source en
+#                            mode image, et une alerte sans source est pire qu'absente. Pour de
+#                            VRAIES métriques machine, il reste un service à part (`pid: host`,
+#                            `/:/host:ro`) : l'image ne prétend pas les fournir.
+#   · blackbox-exporter    — l'objection tenait aussi : sonder depuis l'intérieur ne détecte pas
+#                            une coupure entre le consommateur et la plateforme. Il reste utile
+#                            pour la vivacité interne des quatre composants, et l'observation
+#                            depuis l'extérieur demeure le rôle d'Uptime Kuma, hors infra.
+#   · postgres_exporter    — ne démarre QUE si une chaîne de connexion est fournie. Absent ou
+#                            sain, jamais en boucle d'échec (voir docker/supervisord.conf).
+#
+# CE QU'ELLE NE CONTIENT TOUJOURS PAS, ET POURQUOI :
 #   · Uptime Kuma          — le compose du socle le dit lui-même : en production elle se déploie
 #                            HORS infrastructure, sinon elle tombe avec ce qu'elle surveille.
 #   · GlitchTip + Postgres + Redis + worker
@@ -33,6 +46,9 @@ FROM grafana/grafana:11.4.0                       AS grafana
 FROM prom/alertmanager:v0.27.0                    AS alertmanager
 FROM grafana/alloy:v1.6.1                         AS alloy
 FROM caddy:2-alpine                               AS caddy
+FROM prom/node-exporter:v1.8.2                    AS node-exporter
+FROM prom/blackbox-exporter:v0.25.0               AS blackbox-exporter
+FROM prometheuscommunity/postgres-exporter:v0.16.0 AS postgres-exporter
 
 # BASE GLIBC, ET NON ALPINE — constat, pas préférence. Le binaire `alloy` est construit contre la
 # glibc d'Ubuntu 24.04 : sur Alpine il sort en 127 (« command not found », en réalité l'éditeur de
@@ -41,7 +57,7 @@ FROM caddy:2-alpine                               AS caddy
 # statique. Une base glibc convient donc à tout le monde ; l'inverse est faux.
 FROM ubuntu:24.04
 
-# supervisor : la supervision des huit processus (voir docker/supervisord.conf pour le choix).
+# supervisor : la supervision des douze processus (voir docker/supervisord.conf pour le choix).
 # ca-certificates : Caddy et les exportateurs sortent en TLS.
 # tzdata : sans elle, les horodatages restent en UTC brut, ce qui fausse la lecture des tableaux
 #          de bord — RG-026 exige un rendu dans le fuseau du navigateur.
@@ -61,6 +77,11 @@ COPY --from=pyroscope    /usr/bin/pyroscope        /usr/local/bin/pyroscope
 COPY --from=alertmanager /bin/alertmanager         /usr/local/bin/alertmanager
 COPY --from=alloy        /bin/alloy                /usr/local/bin/alloy
 COPY --from=caddy        /usr/bin/caddy            /usr/local/bin/caddy
+# Les trois exportateurs. Chemins RELEVÉS, non supposés : l'ENTRYPOINT de chacune des images
+# amont pointe /bin/<nom> (vérifié par `docker inspect` avant d'écrire ces lignes).
+COPY --from=node-exporter     /bin/node_exporter      /usr/local/bin/node_exporter
+COPY --from=blackbox-exporter /bin/blackbox_exporter  /usr/local/bin/blackbox_exporter
+COPY --from=postgres-exporter /bin/postgres_exporter  /usr/local/bin/postgres_exporter
 
 # Grafana n'est pas un binaire isolé : il lui faut son arborescence (interface web, greffons).
 COPY --from=grafana      /usr/share/grafana        /usr/share/grafana
@@ -85,6 +106,7 @@ COPY prometheus/                  /etc/prometheus/
 COPY alertmanager/                /etc/alertmanager/
 COPY grafana/provisioning/        /etc/grafana/provisioning/
 COPY docker/Caddyfile             /etc/caddy/Caddyfile
+COPY blackbox.yml                 /etc/blackbox_exporter/config.yml
 COPY docker/supervisord.conf      /etc/supervisor/supervisord.conf
 COPY docker/entrypoint.sh         /usr/local/bin/entrypoint.sh
 COPY docker/healthcheck.sh        /usr/local/bin/healthcheck.sh
@@ -130,14 +152,21 @@ RUN mkdir -p /etc/grafana \
  && mkdir -p /loki /var/tempo \
              /var/lib/obs/prometheus /var/lib/obs/pyroscope /var/lib/obs/grafana \
              /var/lib/obs/alertmanager /var/lib/obs/alloy /var/lib/obs/caddy /var/log/grafana \
+             /var/lib/obs/textfile \
  && chown -R obs:obs /loki /var/tempo /var/lib/obs /var/log/grafana /etc/alertmanager
+
+# postgres_exporter est le seul programme conditionnel : supervisord lit cette variable dans son
+# `autostart`. Valeur par défaut « false » pour que la référence %(ENV_…)s résolve même si l'on
+# lance supervisord sans passer par l'entrypoint ; c'est ce dernier qui la bascule à « true »
+# lorsqu'une chaîne de connexion est fournie.
+ENV PG_EXPORTER_AUTOSTART=false
 
 # Le socle passe DEPLOY_ENV au collector ; sans valeur, le processeur `resource` refuse de se
 # construire et le collector meurt au démarrage. Valeur par défaut ici, surchargeable au `run`.
 ENV DEPLOY_ENV=prod
 
 # PID 1 démarre en root le temps d'écrire une ligne dans /etc/hosts (voir l'entrypoint), puis
-# supervisord bascule immédiatement sur `obs` : aucun des huit processus supervisés ne tourne en
+# supervisord bascule immédiatement sur `obs` : aucun des douze processus supervisés ne tourne en
 # root. C'est aussi pourquoi Caddy écoute sur 8443/8080 et non sur 443/80.
 
 # 8443/8080 : Caddy, seul point d'entrée en mode durci.

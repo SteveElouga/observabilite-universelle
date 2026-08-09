@@ -104,6 +104,17 @@ services:
     image: prom/blackbox-exporter:v0.25.0
     volumes: ["./blackbox.yml:/etc/blackbox_exporter/config.yml:ro"]
 
+  # Métriques PostgreSQL de l'APPLICATION observée — connexions, requêtes lentes, taille des
+  # bases, locks (§8.3 du DAT consommateur). L'exportateur vit ici, pas chez le consommateur :
+  # c'est la plateforme qui sait quoi scruter, lui ne fournit qu'une chaîne de connexion.
+  # Sans DATA_SOURCE_NAME, le conteneur s'arrête — d'où le profil : on ne le démarre que branché.
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    profiles: [pg]
+    environment:
+      # Compte en LECTURE SEULE, avec pg_monitor. Un exportateur ne doit jamais pouvoir écrire.
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:-}
+
   # Uptime Kuma DANS la pile = pratique en dev, mais point de vue non indépendant : si le
   # serveur tombe, cette sonde tombe avec lui et ne peut plus alerter. En prod, la déployer
   # HORS infra (autre machine/fournisseur) — voir uptime-kuma/README.md.

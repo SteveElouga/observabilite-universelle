@@ -27,17 +27,32 @@ scrape_configs:
       - { source_labels: [__param_target], target_label: instance }
       - { target_label: __address__, replacement: "blackbox-exporter:9115" }
 
-  - job_name: blackbox-demo            # endpoints de la démo (profil compose « demo »)
+  # Endpoints de la DÉMO. Découverts par fichier, et non écrits en dur, pour une raison
+  # constatée à la recette : en mode image, ces deux conteneurs n'existent pas. Tant que
+  # blackbox-exporter n'était pas embarqué, le job tombait entier et personne ne le voyait ;
+  # depuis qu'il tourne, les sondes échouent VRAIMENT et « ProbeDown » sonnerait sans fin chez
+  # le consommateur. L'entrypoint vide donc ce fichier hors mode démo (DEMO_TARGETS=true).
+  - job_name: blackbox-demo
     metrics_path: /probe
     params: { module: [http_local] }
-    static_configs:
-      - targets:
-          - http://units-service:8000/sante/
-          - http://units-webapp:8080/
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/demo.yml"] }]
     relabel_configs:
       - { source_labels: [__address__], target_label: __param_target }
       - { source_labels: [__param_target], target_label: instance }
       - { target_label: __address__, replacement: "blackbox-exporter:9115" }
+
+  # --- Cibles OPTIONNELLES du consommateur, découvertes par fichier (prometheus/targets/).
+  #     Fichier à `[]` = aucune cible = aucune série, donc aucune fausse alerte « service down ».
+  #     L'entrypoint les remplit à partir de DATA_SOURCE_NAME, RABBITMQ_METRICS_TARGET et
+  #     KEYCLOAK_METRICS_TARGET. Voir prometheus/targets/README.md.
+  - job_name: postgres                 # dashboard PostgreSQL §8.3 (connexions, locks, taille)
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/postgres.yml"] }]
+
+  - job_name: rabbitmq                 # dashboard événements §8.3 + alerte DLQ §8.4
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/rabbitmq.yml"] }]
+
+  - job_name: keycloak                 # alerte « échecs de connexion anormaux » §8.4
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/keycloak.yml"] }]
 
   # --- Gabarit PROD : cibles publiques en HTTPS (module http_2xx, exige un TLS valide).
   #     Décommentez et remplacez par vos URLs une fois la plateforme exposée derrière un proxy TLS.

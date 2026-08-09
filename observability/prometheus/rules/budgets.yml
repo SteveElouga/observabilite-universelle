@@ -1,0 +1,47 @@
+# prometheus/rules/budgets.yml — budgets de latence par OPÉRATION (§8.4, lignes ENF-01 et ENF-02)
+#
+# Pourquoi un fichier à part de red.yml : red.yml surveille la santé d'un SERVICE, ici on
+# surveille la tenue d'une PROMESSE faite à l'utilisateur sur une opération précise. Deux
+# intentions, deux durées d'observation (15 min contre 5 et 10), deux fichiers.
+#
+# GÉNÉRIQUE À DESSEIN. Aucune de ces règles ne nomme un service ni une opération du consommateur :
+# la seconde reconnaît les écritures par une convention de nommage, pas par une liste. Une
+# plateforme qui connaîtrait les noms d'un projet cesserait de servir le suivant.
+#
+# Source : traces_span_metrics_duration_milliseconds_bucket (connecteur spanmetrics, §10.3),
+# calculé sur 100 % du trafic avant échantillonnage — donc jamais faussé par le tail sampling.
+groups:
+  - name: budgets-operations
+    rules:
+      # ENF-01 — toute opération de lecture doit rester sous 2 s au P95.
+      - alert: BudgetLatenceDepasse
+        expr: |
+          histogram_quantile(0.95, sum by (le, service_name, span_name)
+            (rate(traces_span_metrics_duration_milliseconds_bucket[15m]))) > 2000
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.service_name }} / {{ $labels.span_name }} : P95 à {{ $value | humanizeDuration }}"
+          description: >-
+            Le P95 de cette opération dépasse 2 s depuis quinze minutes. Budget de latence de
+            lecture épuisé. Ouvrir le dashboard du service, suivre un exemplar vers la trace.
+          runbook_url: "https://grafana.localhost/d/obs-service/par-service"
+
+      # ENF-02 — les écritures ont un budget plus serré : 500 ms au P95.
+      # Les écritures sont reconnues au NOM du span, par convention (create/update/delete/mutation
+      # et leurs équivalents français). C'est imparfait et c'est assumé : l'alternative serait
+      # d'inscrire ici la liste des opérations d'un projet donné, ce qui lierait la plateforme.
+      - alert: BudgetLatenceEcritureDepasse
+        expr: |
+          histogram_quantile(0.95, sum by (le, service_name, span_name)
+            (rate(traces_span_metrics_duration_milliseconds_bucket{
+              span_name=~"(?i).*(create|creer|créer|update|modifier|delete|supprimer|mutation).*"
+            }[15m]))) > 500
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.service_name }} / {{ $labels.span_name }} : écriture à {{ $value | humanizeDuration }} au P95"
+          description: >-
+            Le P95 de cette écriture dépasse 500 ms depuis quinze minutes. Vérifier les verrous et
+            les requêtes lentes côté base avant de soupçonner le code applicatif.
+          runbook_url: "https://grafana.localhost/d/obs-postgres/postgresql"

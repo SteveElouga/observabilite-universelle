@@ -1,0 +1,21 @@
+# grafana/provisioning/dashboards/provider.yaml — chargement des dashboards du socle (§8.3)
+#
+# Les JSON vivent dans le sous-répertoire socle/ et non ici : Grafana scrute `options.path` à la
+# recherche de fichiers .json, et y laisser ce YAML à côté marche mais brouille la lecture. Un
+# répertoire = les dashboards, un fichier = leur déclaration.
+#
+# `allowUiUpdates: false` — les modifications faites à la souris ne survivent pas au
+# redémarrage, et c'est voulu : le dashboard versionné est la seule vérité. Qui veut changer un
+# panneau l'exporte, remplace le JSON, et le fait passer en revue comme du code.
+apiVersion: 1
+providers:
+  - name: socle
+    orgId: 1
+    folder: Socle          # dossier visible dans Grafana ; regroupe les sept écrans
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/socle
+      foldersFromFilesStructure: false
