@@ -166,7 +166,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum(rate(traces_span_metrics_calls_total[$__rate_interval]))",
+          "expr": "(sum(rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) or (sum(rate(traces_span_metrics_calls_total[$__rate_interval])) * 0)) / sum(rate(traces_span_metrics_calls_total[$__rate_interval]))",
           "editorMode": "code",
           "instant": false,
           "range": true
@@ -473,7 +473,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (service_name) (rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval]))\n/\nsum by (service_name) (rate(traces_span_metrics_calls_total[$__rate_interval]))",
+          "expr": "(sum by (service_name) (rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) or (sum by (service_name) (rate(traces_span_metrics_calls_total[$__rate_interval])) * 0))\n/\nsum by (service_name) (rate(traces_span_metrics_calls_total[$__rate_interval]))",
           "editorMode": "code",
           "legendFormat": "{{service_name}}",
           "instant": false,
@@ -811,7 +811,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{service_name=~\".+\"} |~ \"(?i)\\\\\"(level|severity)\\\\\": *\\\\\"(error|critical|fatal)\"",
+          "expr": "{service_name=~\".+\"} | detected_level=~\"(?i)error|critical|fatal\"",
           "queryType": "range"
         }
       ],
