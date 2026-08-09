@@ -13,3 +13,12 @@ uptime-kuma/
 oneuptime/
 hardening/backup.sh
 README.md
+
+# SLO de DÉMONSTRATION — ne doivent pas voyager dans l'image livrée aux consommateurs.
+# `rules-slo.yml` est généré par sloth à partir de slo/units-service.yml, le service de démo de
+# ce dépôt. Ignoré par Git, il restait pourtant présent sur le disque au moment du build : le
+# contexte Docker ne suit pas .gitignore. Résultat, la 1.1.1 embarquait des règles SLO pour un
+# `units-service` qui n'existe chez aucun consommateur, et le dashboard SLO affichait un service
+# fantôme. En mode compose le fichier est toujours là, monté depuis le dépôt : rien n'est perdu
+# pour la démo, seule l'image cesse de transporter ce qui ne la regarde pas.
+prometheus/rules/rules-slo.yml
