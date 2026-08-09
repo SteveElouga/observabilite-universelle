@@ -21,6 +21,31 @@ if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
 fi
 export GF_SECURITY_ADMIN_PASSWORD="$GRAFANA_ADMIN_PASSWORD"
 
+# 2 bis. RÉCONCILIATION DU MOT DE PASSE, et non simple transmission. Grafana n'applique
+#        GF_SECURITY_ADMIN_PASSWORD qu'à la CRÉATION de l'utilisateur admin ; ensuite sa base
+#        fait foi et la variable est ignorée EN SILENCE. Comme /var/lib/obs est un volume, la
+#        base survit au remplacement du conteneur : régénérer son .env suffit alors à se
+#        retrouver dehors, avec pour tout indice « invalid username or password ».
+#        Constaté le 09/08 sur une base créée la veille — une heure pour comprendre.
+#
+#        On réaligne donc à chaque démarrage. Contrepartie assumée, et symétrique de
+#        « allowUiUpdates: false » sur les dashboards : un mot de passe changé depuis
+#        l'interface est écrasé au redémarrage. Sur une plateforme provisionnée, la variable
+#        d'environnement est la source de vérité, pas l'état accumulé dans un volume.
+if [ -f /var/lib/obs/grafana/grafana.db ]; then
+  if /usr/share/grafana/bin/grafana cli --homepath /usr/share/grafana \
+       --config /etc/grafana/grafana.ini \
+       admin reset-admin-password "$GRAFANA_ADMIN_PASSWORD" >/dev/null 2>&1; then
+    echo "Grafana : base existante, mot de passe administrateur réaligné sur GRAFANA_ADMIN_PASSWORD."
+  else
+    echo "Grafana : base existante mais réalignement du mot de passe IMPOSSIBLE." >&2
+    echo "          L'accès se fera avec l'ancien mot de passe, pas celui de l'environnement." >&2
+  fi
+  # La CLI a écrit en tant que root ; sans cela Grafana, qui tourne en « obs », ne peut plus
+  # ouvrir sa propre base en écriture.
+  chown -R obs:obs /var/lib/obs/grafana
+fi
+
 # 3. Le webhook Slack d'Alertmanager n'est PAS une variable d'environnement : Alertmanager ne
 #    les lit pas. Le socle attend un fichier, délibérément hors image. S'il est monté, tant
 #    mieux ; sinon on écrit un fichier vide pour qu'Alertmanager démarre au lieu d'échouer.
