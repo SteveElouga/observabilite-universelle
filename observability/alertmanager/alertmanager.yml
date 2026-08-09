@@ -21,6 +21,16 @@ receivers:
       - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
         channel: "#alertes"
         send_resolved: true
+        # GABARIT EXPLICITE, et c'est nécessaire : le gabarit `text` par défaut d'Alertmanager
+        # est une chaîne VIDE. Sans ces trois lignes, Slack reçoit un titre et rien d'autre —
+        # constaté en recette, l'astreinte lisait un nom d'alerte sans résumé ni marche à suivre.
+        title: '{{ .Status | toUpper }} · {{ .CommonLabels.alertname }}{{ if .CommonLabels.service_name }} · {{ .CommonLabels.service_name }}{{ end }}'
+        text: |-
+          {{ range .Alerts -}}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|Que faire — runbook>{{ end }}
+          {{ end }}
 
   # severity=page : double notification. Slack pour la visibilité de l'équipe, et OneUptime
   # pour la garde (rotation d'astreinte, escalade, appel téléphonique). Voir oneuptime/README.md.
@@ -29,6 +39,16 @@ receivers:
       - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
         channel: "#alertes"
         send_resolved: true
+        # GABARIT EXPLICITE, et c'est nécessaire : le gabarit `text` par défaut d'Alertmanager
+        # est une chaîne VIDE. Sans ces trois lignes, Slack reçoit un titre et rien d'autre —
+        # constaté en recette, l'astreinte lisait un nom d'alerte sans résumé ni marche à suivre.
+        title: '{{ .Status | toUpper }} · {{ .CommonLabels.alertname }}{{ if .CommonLabels.service_name }} · {{ .CommonLabels.service_name }}{{ end }}'
+        text: |-
+          {{ range .Alerts -}}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|Que faire — runbook>{{ end }}
+          {{ end }}
     webhook_configs:
       # OneUptime, intégration Alertmanager entrante (url_file : Alertmanager >= 0.26).
       - url_file: /etc/alertmanager/secrets/oneuptime_webhook_url

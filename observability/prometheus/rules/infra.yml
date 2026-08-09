@@ -19,6 +19,7 @@ groups:
           description: >-
             Planifier une purge ou une extension. Les gros consommateurs habituels sont la
             rétention Prometheus (15 j), les blocs Tempo et les segments Loki.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#disquebientotplein"
 
       - alert: DisquePresquePlein
         expr: |
@@ -31,6 +32,7 @@ groups:
           description: >-
             Intervention immédiate. Au-delà de 95 %, PostgreSQL refuse les écritures et la
             plateforme perd ses propres données d'observation — on devient aveugle pendant la panne.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#disquepresqueplein"
 
   - name: disponibilite-cibles
     rules:
@@ -48,3 +50,4 @@ groups:
             Prometheus n'obtient plus de métriques depuis deux minutes. Distinguer la panne du
             composant de celle de la collecte : si TOUTES les cibles tombent d'un coup, le
             suspect est le réseau ou la plateforme, pas les services observés.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#cibleinjoignable"
