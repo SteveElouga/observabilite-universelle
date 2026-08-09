@@ -126,7 +126,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(traces_span_metrics_calls_total{service_name=\"$service\",status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum(rate(traces_span_metrics_calls_total{service_name=\"$service\"}[$__rate_interval]))",
+          "expr": "(sum(rate(traces_span_metrics_calls_total{service_name=\"$service\",status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) or (sum(rate(traces_span_metrics_calls_total{service_name=\"$service\"}[$__rate_interval])) * 0)) / sum(rate(traces_span_metrics_calls_total{service_name=\"$service\"}[$__rate_interval]))",
           "editorMode": "code",
           "instant": false,
           "range": true
