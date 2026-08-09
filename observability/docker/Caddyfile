@@ -1,0 +1,41 @@
+# Caddyfile de l'image — durcissement §7.4 transposé au conteneur unique.
+#
+# DIFFÉRENCE AVEC hardening/Caddyfile. Là-bas, Caddy est un conteneur parmi d'autres et joint
+# ses voisins par leur nom de service Docker. Ici tout vit dans le même conteneur : l'entrypoint
+# fait pointer ces mêmes noms vers 127.0.0.1, donc les directives restent identiques et les deux
+# fichiers ne divergent pas sur le fond.
+#
+# GlitchTip et Uptime Kuma n'ont pas de bloc ici : ils ne sont pas dans l'image (voir le README
+# de l'image). Leur laisser un vhost produirait un 502 permanent, ce qui masquerait une vraie panne.
+#
+# PORTS. Aucun processus n'est root, donc Caddy ne peut pas prendre 443 ni 80. Il écoute sur
+# 8443 et 8080 ; c'est au compose appelant de publier 443:8443 s'il le souhaite.
+{
+	http_port 8080
+	https_port 8443
+	# email {$ACME_EMAIL}   # à renseigner en production, avec un vrai domaine et sans `tls internal`.
+}
+
+{$GRAFANA_DOMAIN:grafana.localhost} {
+	tls internal
+	reverse_proxy grafana:3000
+}
+
+# Point de collecte du navigateur (Faro). Restreindre EN PLUS les origines acceptées dans
+# alloy-config.alloy (cors_allowed_origins) au domaine du frontend, à la place du ["*"] de lab.
+{$FARO_DOMAIN:faro.localhost} {
+	tls internal
+	reverse_proxy alloy:12347
+}
+
+# Prometheus, Loki, Tempo, Alertmanager et Pyroscope restent INTERNES : joignables par Grafana
+# seulement. Pour un accès direct, décommenter et protéger par authentification basique.
+# Générer le hash : docker run --rm caddy:2-alpine caddy hash-password --plaintext 'motdepasse'
+#
+# {$PROMETHEUS_DOMAIN:prometheus.localhost} {
+# 	tls internal
+# 	basic_auth {
+# 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+# 	}
+# 	reverse_proxy prometheus:9090
+# }

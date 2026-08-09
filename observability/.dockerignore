@@ -1,0 +1,15 @@
+# Rien de secret n'entre dans l'image (le README l'exige, et une image publique se lit).
+.env
+.env.*
+!.env.example
+alertmanager/secrets/
+**/secrets/
+
+# Hors périmètre de l'image
+.git/
+.gitignore
+k6/
+uptime-kuma/
+oneuptime/
+hardening/backup.sh
+README.md

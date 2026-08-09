@@ -1,0 +1,45 @@
+// alloy-faro.alloy — configuration d'Alloy POUR L'IMAGE. Un seul rôle : récepteur Faro.
+//
+// POURQUOI ELLE DIFFÈRE DE alloy-config.alloy. L'amont a deux rôles : collecter les logs des
+// conteneurs Docker, et recevoir les événements Faro du navigateur. Le premier exige de monter
+// /var/run/docker.sock dans le conteneur — or FT-2 de GP-Formuloo a précisément SUPPRIMÉ les
+// montages de ce socket pour raison de sécurité, en retirant Traefik. Le remonter reviendrait
+// sur une décision prise.
+//
+// Les logs de GP-Formuloo n'en pâtissent pas : le pipeline `logs` du Collector accepte déjà
+// l'OTLP et exporte vers Loki (voir otel-collector-config.yaml). Les services émettent donc
+// leurs logs en OTEL_LOGS_EXPORTER=otlp, et personne ne lit le socket.
+//
+// Les quatre blocs ci-dessous sont repris à l'identique de l'amont. Le Dockerfile vérifie à la
+// construction qu'ils y existent toujours : si l'amont est restructuré, le build échoue plutôt
+// que de produire une image discrètement périmée.
+
+faro.receiver "web" {
+  server {
+    listen_address       = "0.0.0.0"
+    listen_port          = 12347
+    cors_allowed_origins = ["*"]          // à restreindre au domaine du front en prod (§7.4)
+  }
+  output {
+    logs   = [loki.process.faro.receiver]
+    traces = [otelcol.exporter.otlp.collector.input]
+  }
+}
+
+loki.process "faro" {
+  stage.static_labels {
+    values = { source = "faro" }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint { url = "http://loki:3100/loki/api/v1/push" }
+}
+
+otelcol.exporter.otlp "collector" {
+  client {
+    endpoint = "otel-collector:4317"
+    tls { insecure = true }
+  }
+}
