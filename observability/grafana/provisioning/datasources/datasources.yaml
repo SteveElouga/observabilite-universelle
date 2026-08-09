@@ -9,6 +9,10 @@ datasources:
     isDefault: true
     jsonData:
       httpMethod: POST
+      # Intervalle de collecte, aligné sur prometheus.yml (« scrape_interval: 15s »). Sans lui,
+      # « $__rate_interval » n'a pas de base de calcul : les panneaux qui l'emploient — donc tous
+      # ceux qui font un rate() — peuvent ne rien rendre. Grafana ne signale pas le manque.
+      timeInterval: 15s
       # MÉTRIQUE → TRACE : chaque exemplar devient un bouton "voir la trace"
       exemplarTraceIdDestinations:
         - { name: trace_id, datasourceUid: tempo }

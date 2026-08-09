@@ -40,7 +40,16 @@ processors:
 
 # Métriques dérivées des spans — calculées sur 100 % du trafic, AVANT le tail sampling
 connectors:
-  spanmetrics: {}      # RED (débit/erreurs/latence) par service & route, sans instrumentation métrique
+  # RED (débit/erreurs/latence) par service & route, sans instrumentation métrique.
+  #
+  # `metrics_flush_interval` N'EST PAS UN RÉGLAGE DE CONFORT. Par défaut le connecteur purge
+  # toutes les 60 s, alors que Prometheus collecte toutes les 15 s. Les séries dérivées arrivent
+  # donc quatre fois moins souvent que les autres — et `$__rate_interval`, calculé sur
+  # l'intervalle de collecte, vaut 60 s : UN SEUL échantillon dans la fenêtre, donc `rate()` ne
+  # rend RIEN. Tous les panneaux RED affichaient « No data » pendant que ceux de node-exporter
+  # traçaient normalement. Mesuré : 60 s d'écart côté spanmetrics, 15 s côté node.
+  spanmetrics:
+    metrics_flush_interval: 15s
   servicegraph: {}     # nourrit la carte des services de Grafana (écran 0)
 
 exporters:

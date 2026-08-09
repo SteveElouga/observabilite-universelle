@@ -53,6 +53,7 @@
             "uid": "prometheus"
           },
           "expr": "count(up == 0) or vector(0)",
+          "editorMode": "code",
           "instant": true,
           "range": false
         }
@@ -110,7 +111,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(traces_span_metrics_calls_total[$__rate_interval]))"
+          "expr": "sum(rate(traces_span_metrics_calls_total[$__rate_interval]))",
+          "editorMode": "code",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -162,7 +166,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum(rate(traces_span_metrics_calls_total[$__rate_interval]))"
+          "expr": "sum(rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval])) / sum(rate(traces_span_metrics_calls_total[$__rate_interval]))",
+          "editorMode": "code",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -222,7 +229,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket[$__rate_interval])))"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket[$__rate_interval])))",
+          "editorMode": "code",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -283,6 +293,7 @@
             "uid": "prometheus"
           },
           "expr": "count(count by (service_name) (traces_span_metrics_calls_total))",
+          "editorMode": "code",
           "instant": true,
           "range": false
         }
@@ -336,7 +347,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(otelcol_receiver_refused_spans_total[$__rate_interval])) or vector(0)"
+          "expr": "sum(rate(otelcol_receiver_refused_spans_total[$__rate_interval])) or vector(0)",
+          "editorMode": "code",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -406,7 +420,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (service_name) (rate(traces_span_metrics_calls_total[$__rate_interval]))",
-          "legendFormat": "{{service_name}}"
+          "editorMode": "code",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -457,7 +474,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (service_name) (rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[$__rate_interval]))\n/\nsum by (service_name) (rate(traces_span_metrics_calls_total[$__rate_interval]))",
-          "legendFormat": "{{service_name}}"
+          "editorMode": "code",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -529,7 +549,10 @@
             "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(traces_span_metrics_duration_milliseconds_bucket[$__rate_interval])))",
-          "legendFormat": "{{service_name}}"
+          "editorMode": "code",
+          "legendFormat": "{{service_name}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -593,7 +616,10 @@
             "uid": "prometheus"
           },
           "expr": "100 - (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|ramfs\"} / node_filesystem_size_bytes * 100)",
-          "legendFormat": "{{mountpoint}}"
+          "editorMode": "code",
+          "legendFormat": "{{mountpoint}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -665,7 +691,10 @@
             "uid": "prometheus"
           },
           "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
-          "legendFormat": "utilisée"
+          "editorMode": "code",
+          "legendFormat": "utilisée",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -716,7 +745,10 @@
             "uid": "prometheus"
           },
           "expr": "100 * (1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[$__rate_interval])))",
-          "legendFormat": "occupation"
+          "editorMode": "code",
+          "legendFormat": "occupation",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
