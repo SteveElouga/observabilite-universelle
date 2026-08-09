@@ -15,6 +15,7 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} injoignable depuis la sonde ({{ $labels.job }})"
           description: "La sonde HTTP échoue depuis au moins 2 minutes. Le service répond mal ou est arrêté."
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#probedown"
 
       - alert: ProbeSlow
         expr: probe_duration_seconds > 1
@@ -26,6 +27,8 @@ groups:
 
       # Ne concerne que les cibles HTTPS (job blackbox-public) : la métrique est absente en HTTP,
       # donc l'alerte reste silencieuse tant qu'aucune cible TLS n'est sondée.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#probeslow"
+
       - alert: ProbeSSLCertExpiringSoon
         expr: probe_ssl_earliest_cert_expiry - time() < 15 * 24 * 3600
         for: 1h
@@ -33,3 +36,4 @@ groups:
         annotations:
           summary: "{{ $labels.instance }} : certificat TLS expire dans moins de 15 jours"
           description: "Renouveler le certificat avant expiration pour éviter une coupure côté clients."
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#probesslcertexpiringsoon"

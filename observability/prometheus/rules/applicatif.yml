@@ -19,6 +19,7 @@ groups:
           description: >-
             Un ou plusieurs messages ont épuisé leurs reprises. Lire le motif dans l'en-tête
             x-death, corriger la cause, puis rejouer la file. Ne jamais purger sans avoir lu.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#filederebutnonvide"
 
   - name: authentification
     rules:
@@ -37,6 +38,7 @@ groups:
           description: >-
             Au-delà de vingt échecs par tranche de cinq minutes, l'hypothèse d'une erreur de
             saisie ne tient plus. Chercher une adresse source unique avant de bloquer un compte.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#echecsauthentificationanormaux"
 
   - name: sauvegardes
     rules:
@@ -56,3 +58,4 @@ groups:
             Aucune sauvegarde n'a abouti depuis plus de 26 heures. Vérifier le travail planifié
             AVANT d'en lancer une à la main : une sauvegarde manuelle qui réussit éteint l'alerte
             sans corriger la cause, et masque la panne jusqu'au prochain incident réel.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sauvegardeabsente"

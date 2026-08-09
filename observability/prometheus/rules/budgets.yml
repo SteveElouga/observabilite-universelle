@@ -25,7 +25,7 @@ groups:
           description: >-
             Le P95 de cette opération dépasse 2 s depuis quinze minutes. Budget de latence de
             lecture épuisé. Ouvrir le dashboard du service, suivre un exemplar vers la trace.
-          runbook_url: "https://grafana.localhost/d/obs-service/par-service"
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#budgetlatencedepasse"
 
       # ENF-02 — les écritures ont un budget plus serré : 500 ms au P95.
       # Les écritures sont reconnues au NOM du span, par convention (create/update/delete/mutation
@@ -44,4 +44,4 @@ groups:
           description: >-
             Le P95 de cette écriture dépasse 500 ms depuis quinze minutes. Vérifier les verrous et
             les requêtes lentes côté base avant de soupçonner le code applicatif.
-          runbook_url: "https://grafana.localhost/d/obs-postgres/postgresql"
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#budgetlatenceecrituredepasse"
