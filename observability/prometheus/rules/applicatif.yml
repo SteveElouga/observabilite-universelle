@@ -1,0 +1,58 @@
+# prometheus/rules/applicatif.yml — alertes sur les composants applicatifs OBSERVÉS (§8.4)
+#
+# Ces trois règles dépendent de cibles optionnelles (prometheus/targets/). Tant que le
+# consommateur ne fournit pas d'adresse, aucune série n'existe et les règles restent muettes.
+# Elles sont écrites malgré tout, et c'est délibéré : une règle absente se redécouvre le jour de
+# l'incident, une règle muette s'allume seule le jour du branchement.
+groups:
+  - name: courtier-de-messages
+    rules:
+      # Une file de rebut non vide signifie qu'un message a échoué à être traité DÉFINITIVEMENT,
+      # après toutes ses reprises. Le seuil est 1, pas 10 : au-delà de zéro, une donnée métier
+      # est perdue tant que personne ne la rejoue. Cible : greffon rabbitmq_prometheus (:15692).
+      - alert: FileDeRebutNonVide
+        expr: rabbitmq_queue_messages{queue=~"(?i).*(dlq|dead.?letter|rebut).*"} > 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.queue }} : {{ $value }} message(s) en rebut"
+          description: >-
+            Un ou plusieurs messages ont épuisé leurs reprises. Lire le motif dans l'en-tête
+            x-death, corriger la cause, puis rejouer la file. Ne jamais purger sans avoir lu.
+
+  - name: authentification
+    rules:
+      # MÉTRIQUE DÉPENDANTE DE LA VERSION, et c'est un piège connu :
+      #   · Keycloak >= 25 avec « --metrics-enabled --event-metrics-user-enabled » expose
+      #     keycloak_user_events_total{event="login_error"} — c'est ce qu'on interroge ici ;
+      #   · les versions antérieures exposaient keycloak_failed_login_attempts via un SPI tiers.
+      # Sans le second drapeau, les métriques d'événement utilisateur n'existent PAS, même si
+      # /metrics répond : le job serait vert et la règle muette. Vérifier la série, pas le port.
+      - alert: EchecsAuthentificationAnormaux
+        expr: sum(increase(keycloak_user_events_total{event="login_error"}[5m])) > 20
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value | printf \"%.0f\" }} échecs de connexion en 5 minutes"
+          description: >-
+            Au-delà de vingt échecs par tranche de cinq minutes, l'hypothèse d'une erreur de
+            saisie ne tient plus. Chercher une adresse source unique avant de bloquer un compte.
+
+  - name: sauvegardes
+    rules:
+      # La sauvegarde ne s'observe pas : elle se DÉCLARE. Le travail de sauvegarde écrit son
+      # horodatage de succès dans un fichier .prom déposé dans le répertoire textfile de
+      # node-exporter (/var/lib/obs/textfile), par exemple :
+      #     backup_last_success_timestamp_seconds 1754697600
+      # 26 heures et non 24 : une sauvegarde quotidienne qui glisse de deux heures reste saine,
+      # et une alerte qui sonne à chaque décalage bénin finit par ne plus être lue.
+      - alert: SauvegardeAbsente
+        expr: time() - backup_last_success_timestamp_seconds > 26 * 3600
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "Dernière sauvegarde réussie il y a {{ $value | humanizeDuration }}"
+          description: >-
+            Aucune sauvegarde n'a abouti depuis plus de 26 heures. Vérifier le travail planifié
+            AVANT d'en lancer une à la main : une sauvegarde manuelle qui réussit éteint l'alerte
+            sans corriger la cause, et masque la panne jusqu'au prochain incident réel.

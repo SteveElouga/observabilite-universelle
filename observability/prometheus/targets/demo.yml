@@ -1,0 +1,2 @@
+- targets: ["http://units-service:8000/sante/", "http://units-webapp:8080/"]
+  labels: { role: demo }

@@ -1,0 +1,50 @@
+# prometheus/rules/infra.yml — saturation et disponibilité de l'hôte (§8.4)
+# Source : node-exporter, désormais EMBARQUÉ dans l'image (voir docker/supervisord.conf).
+# Avant cet ajout, prometheus.yml scrutait « node-exporter:9100 » — une cible qui n'existait
+# qu'en mode compose. En mode image le job tombait, et l'alerte disque était donc muette.
+groups:
+  - name: saturation-hote
+    rules:
+      # Deux seuils, deux gravités : à 80 % on planifie, à 90 % on intervient.
+      # `fstype` exclut les systèmes de fichiers virtuels : tmpfs vit en RAM, overlay est la
+      # couche d'image (pleine par construction), et les compter ferait sonner en permanence.
+      - alert: DisqueBientotPlein
+        expr: |
+          100 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+                 / node_filesystem_size_bytes * 100) > 80
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.instance }} : {{ $labels.mountpoint }} rempli à {{ $value | humanizePercentage }}"
+          description: >-
+            Planifier une purge ou une extension. Les gros consommateurs habituels sont la
+            rétention Prometheus (15 j), les blocs Tempo et les segments Loki.
+
+      - alert: DisquePresquePlein
+        expr: |
+          100 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+                 / node_filesystem_size_bytes * 100) > 90
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.instance }} : {{ $labels.mountpoint }} rempli à {{ $value | humanizePercentage }}"
+          description: >-
+            Intervention immédiate. Au-delà de 95 %, PostgreSQL refuse les écritures et la
+            plateforme perd ses propres données d'observation — on devient aveugle pendant la panne.
+
+  - name: disponibilite-cibles
+    rules:
+      # `up == 0` couvre TOUTE cible scrutée. Les jobs optionnels (postgres, rabbitmq, keycloak)
+      # sont découverts par fichier et valent « [] » par défaut : sans cible, aucune série `up`,
+      # donc aucune alerte pour un composant que personne n'a branché. C'est la raison d'être du
+      # file_sd — un static_configs vide-mais-déclaré aurait sonné en continu.
+      - alert: CibleInjoignable
+        expr: up == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} / {{ $labels.instance }} ne répond plus"
+          description: >-
+            Prometheus n'obtient plus de métriques depuis deux minutes. Distinguer la panne du
+            composant de celle de la collecte : si TOUTES les cibles tombent d'un coup, le
+            suspect est le réseau ou la plateforme, pas les services observés.

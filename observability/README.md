@@ -14,9 +14,17 @@ observability/
 ├── alloy-config.alloy                 # logs Docker → Loki + récepteur Faro → Collector
 ├── prometheus/
 │   ├── prometheus.yml
+│   ├── targets/                       # cibles OPTIONNELLES, découvertes par fichier (README dédié)
+│   │   ├── postgres.yml               # « [] » par défaut ; l'entrypoint les remplit selon
+│   │   ├── rabbitmq.yml               #   DATA_SOURCE_NAME / RABBITMQ_METRICS_TARGET /
+│   │   ├── keycloak.yml               #   KEYCLOAK_METRICS_TARGET
+│   │   └── demo.yml                   # sondes de la démo — vidées hors mode compose
 │   └── rules/
 │       ├── red.yml                    # alertes RED sur spanmetrics (§10.6)
 │       ├── probes.yml                 # alertes de sonde Blackbox (ProbeDown, cert TLS)
+│       ├── budgets.yml                # budgets de latence par opération (ENF-01/02)
+│       ├── infra.yml                  # remplissage disque, cible injoignable
+│       ├── applicatif.yml             # file de rebut, échecs d'authentification, sauvegarde
 │       └── (rules-slo.yml)            # SLO multi-burn-rate : généré par sloth, hors Git
 ├── alertmanager/
 │   ├── alertmanager.yml               # receivers Slack + page-oncall (webhook OneUptime)
@@ -29,8 +37,17 @@ observability/
 ├── uptime-kuma/                       # sonde externe hébergée hors infra (README + compose dédié)
 ├── oneuptime/                         # astreinte OneUptime hors infra (README : escalade, câblage)
 ├── hardening/                         # durcissement §7.4 : Caddy TLS, ports dépubliés, backup.sh
-├── grafana/provisioning/datasources/
-│   └── datasources.yaml               # LA corrélation : métrique→trace→log→profil (§10.5)
+├── grafana/provisioning/
+│   ├── datasources/datasources.yaml   # LA corrélation : métrique→trace→log→profil (§10.5)
+│   ├── dashboards/provider.yaml       # déclaration du dossier « Socle »
+│   └── dashboards/socle/              # les 7 dashboards en JSON versionné (§8.3)
+│       ├── ensemble.json              #   vue d'ensemble : santé, RED global, saturation
+│       ├── service.json               #   par service, sélecteur $service — remplace 5 copies
+│       ├── gateway.json               #   opérations exposées + Web Vitals Faro (LogQL)
+│       ├── postgres.json              #   connexions, verrous, volumétrie
+│       ├── evenements.json            #   débit, arriéré, files de rebut
+│       ├── metier.json                #   compteurs applicatifs (convention documentée)
+│       └── slo.json                   #   budget d'erreur et vitesse de consommation
 ├── k6/smoke.js                        # parcours synthétique (§10.7)
 └── slo/units-service.yml              # SLO Sloth (§10.6)
 ```
@@ -60,4 +77,8 @@ Ports : Grafana **3000** · Prometheus **9090** · Alertmanager **9093** · Loki
 
 ## Fait, et ce qui reste
 
-Le backlog initial est terminé : socle, démos instrumentées, alerting RED/SLO, sondes externes, astreinte OneUptime, profiling Pyroscope, durcissement (`hardening/`) et CI de sécurité (`../.github/workflows/ci.yml`). Restent, pour la montée en charge : les dashboards RED/USE en as-code (provisioning Grafana) et le passage à Kubernetes avec Mimir (§7.2). Détail dans `MEMORY.md`.
+Le backlog initial est terminé : socle, démos instrumentées, alerting RED/SLO, sondes externes, astreinte OneUptime, profiling Pyroscope, durcissement (`hardening/`) et CI de sécurité (`../.github/workflows/ci.yml`). Les **sept dashboards du §8.3 sont désormais provisionnés en code** (`grafana/provisioning/dashboards/`), et les alertes du §8.4 sont écrites : budgets de latence, remplissage disque, cible injoignable, file de rebut, échecs d'authentification, sauvegarde absente. Trois exportateurs entrent dans l'image pour leur donner une source — `node-exporter`, `blackbox-exporter`, `postgres_exporter` — avec les réserves détaillées en tête du `Dockerfile` : embarqué, node-exporter mesure le conteneur, pas la machine.
+
+Trois de ces alertes et deux de ces dashboards dépendent d'un composant que la plateforme n'héberge pas (PostgreSQL, RabbitMQ, Keycloak). Ils restent **muets et non faux** tant qu'aucune adresse n'est fournie : les cibles se découvrent par fichier, et un fichier vide ne déclare rien. Voir `prometheus/targets/README.md`.
+
+Reste, pour la montée en charge : le passage à Kubernetes avec Mimir (§7.2). Détail dans `MEMORY.md`.
