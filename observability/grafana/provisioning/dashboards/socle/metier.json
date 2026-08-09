@@ -68,7 +68,10 @@
             "uid": "prometheus"
           },
           "expr": "sum(increase(metier_tickets_crees_total[1h]))",
-          "legendFormat": "par heure"
+          "editorMode": "code",
+          "legendFormat": "par heure",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -118,7 +121,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (vers) (increase(metier_transitions_total[1h]))",
-          "legendFormat": "vers {{vers}}"
+          "editorMode": "code",
+          "legendFormat": "vers {{vers}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -168,7 +174,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (canal) (increase(metier_notifications_envoyees_total[1h]))",
-          "legendFormat": "{{canal}}"
+          "editorMode": "code",
+          "legendFormat": "{{canal}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -231,7 +240,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (resultat) (increase(metier_imports_lignes_total[1h]))",
-          "legendFormat": "{{resultat}}"
+          "editorMode": "code",
+          "legendFormat": "{{resultat}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -281,7 +293,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(metier_imports_lignes_total{resultat=\"rejete\"}[24h])) / sum(increase(metier_imports_lignes_total[24h]))"
+          "expr": "sum(increase(metier_imports_lignes_total{resultat=\"rejete\"}[24h])) / sum(increase(metier_imports_lignes_total[24h]))",
+          "editorMode": "code",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {

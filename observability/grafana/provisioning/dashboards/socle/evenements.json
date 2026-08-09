@@ -68,6 +68,7 @@
             "uid": "prometheus"
           },
           "expr": "sum(rabbitmq_queue_messages{queue=~\"(?i).*(dlq|dead.?letter|rebut).*\"}) or vector(0)",
+          "editorMode": "code",
           "instant": true,
           "range": false
         }
@@ -126,7 +127,10 @@
             "uid": "prometheus"
           },
           "expr": "rabbitmq_queue_messages{queue=~\"(?i).*(dlq|dead.?letter|rebut).*\"}",
-          "legendFormat": "{{queue}}"
+          "editorMode": "code",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -205,7 +209,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (queue) (rate(rabbitmq_queue_messages_published_total[$__rate_interval]))",
-          "legendFormat": "{{queue}}"
+          "editorMode": "code",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -256,7 +263,10 @@
             "uid": "prometheus"
           },
           "expr": "rabbitmq_queue_messages_ready",
-          "legendFormat": "{{queue}}"
+          "editorMode": "code",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -307,7 +317,10 @@
             "uid": "prometheus"
           },
           "expr": "rabbitmq_queue_consumers",
-          "legendFormat": "{{queue}}"
+          "editorMode": "code",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -358,7 +371,10 @@
             "uid": "prometheus"
           },
           "expr": "rabbitmq_queue_messages_unacked",
-          "legendFormat": "{{queue}}"
+          "editorMode": "code",
+          "legendFormat": "{{queue}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {

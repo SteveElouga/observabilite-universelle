@@ -68,6 +68,7 @@
             "uid": "prometheus"
           },
           "expr": "1 - max(slo:error_budget:ratio)",
+          "editorMode": "code",
           "instant": true,
           "range": false
         }
@@ -131,7 +132,10 @@
             "uid": "prometheus"
           },
           "expr": "slo:sli_error:ratio_rate5m",
-          "legendFormat": "{{sloth_service}} — {{sloth_slo}}"
+          "editorMode": "code",
+          "legendFormat": "{{sloth_service}} — {{sloth_slo}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
@@ -215,7 +219,10 @@
             "uid": "prometheus"
           },
           "expr": "slo:current_burn_rate:ratio",
-          "legendFormat": "{{sloth_service}} — {{sloth_slo}}"
+          "editorMode": "code",
+          "legendFormat": "{{sloth_service}} — {{sloth_slo}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
