@@ -23,9 +23,24 @@ processors:
       span:
         - 'attributes["http.route"] == "/health/"'    # adapter à vos routes
         - 'attributes["http.route"] == "/ready/"'
+  # Masquage revu le 08/09/2026 après audit réel d'un projet client (SGFE-backend, Python,
+  # auto-instrumentation OTel pure : aucun `set_attribute` applicatif, aucune variable
+  # OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_* définie nulle part → aucun en-tête HTTP n'est
+  # aujourd'hui capturé en attribut de span, et aucun PII (email/téléphone/nom) n'y est mis ;
+  # l'identité (`x-user-id`/`x-user-name`/`x-user-role`) ne transite qu'en métadonnées gRPC
+  # internes vers l'audit applicatif, jamais vers un span). Rien à masquer côté SGFE aujourd'hui,
+  # mais ce Collector est partagé entre plusieurs projets clients (§ « obs-edge ») : les règles
+  # ci-dessous sont donc une défense en profondeur pour tout projet qui activerait la capture
+  # d'en-têtes (ou dont le SDK/langage la capture par défaut), pas une réaction à un incident réel.
+  # `db.statement` jugé suffisant tel quel : Django ORM + psycopg2 envoient des requêtes
+  # paramétrées (`%s`), donc pas de valeur littérale (PII) dans le texte de la requête.
   attributes/redact:
     actions:
       - { key: http.request.header.authorization, action: delete }
+      - { key: http.request.header.proxy-authorization, action: delete }   # forme alternative de l'auth HTTP (proxies)
+      - { key: http.request.header.cookie, action: delete }                # cookie de session
+      - { key: http.response.header.set-cookie, action: delete }           # émission de cookie de session
+      - { pattern: 'http\.(request|response)\.header\..*(token|secret|api-?key|password).*', action: delete }  # en-têtes custom (X-Api-Key, X-Auth-Token, ...), toute casse déjà normalisée en minuscules par la convention sémantique
       - { key: enduser.id, action: hash }
 
   # Échantillonnage tail-based (§7.3) : 100 % des erreurs et des lentes, 10 % du reste

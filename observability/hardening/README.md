@@ -57,6 +57,8 @@ Le chiffrement au repos ne se fait pas dans le compose mais au niveau de l'hôte
 
 Le script `backup.sh` sauvegarde les volumes à état qui ne sont pas reconstructibles depuis le dépôt, à savoir les tableaux de bord créés à la main, l'historique GlitchTip et la configuration d'Uptime Kuma. Planifiez le sur l'hôte, par exemple chaque nuit. Les données de télémétrie ne sont pas sauvegardées, leur perte étant jugée acceptable ; adaptez ce choix à votre politique. Vérifiez régulièrement qu'une restauration fonctionne, une sauvegarde jamais testée n'est pas une sauvegarde.
 
+Si plusieurs projets Compose nommés `observability` tournent sur la même machine (par exemple un second clone ou une vérification en parallèle), le script ne devine pas lequel sauvegarder : il liste les volumes candidats et ignore ceux qui restent ambigus. Précisez `COMPOSE_PROJECT_NAME` pour trancher : `COMPOSE_PROJECT_NAME=observability ./hardening/backup.sh`.
+
 ## Dépannage : accès impossible
 
 Si `https://grafana.localhost` reste injoignable, testez la chaîne en contournant complètement la résolution de nom :
