@@ -76,6 +76,14 @@ services:
     image: grafana/pyroscope:1.10.0
     volumes: ["pyro-data:/data"]
     ports: ["4040:4040"]                       # les SDK poussent ici (§10.1)
+    # Rejoint aussi obs-edge (réseau partagé, méthode 2) : contrairement aux
+    # traces/métriques/logs (OTLP via otel-collector), le profiling Pyroscope
+    # fonctionne en push HTTP direct du SDK vers PYROSCOPE_SERVER_ADDRESS — il
+    # n'y a pas de collecteur intermédiaire à qui déléguer l'exposition. Pyroscope
+    # doit donc être joignable par nom d'hôte stable depuis les projets Compose
+    # clients (ex. SGFE-backend), qui le déclarent `external: true` — voir leur
+    # propre fichier.
+    networks: [default, obs-edge]
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -194,9 +202,12 @@ volumes:
 # implicitement). `obs-edge` est le réseau de raccordement (§6.2, méthode 2) :
 # cette pile le crée et le nomme explicitement (sans `name`, Compose le
 # préfixerait du dossier local, qui varie d'une machine à l'autre — un projet
-# client ne pourrait pas s'y référer de façon stable). Seul `otel-collector` y
-# est ajouté : c'est le seul point d'entrée, jamais un accès direct aux
-# backends (Tempo/Prometheus/Loki) depuis un projet tiers.
+# client ne pourrait pas s'y référer de façon stable). Deux services y sont
+# ajoutés : `otel-collector`, seul point d'entrée pour les traces/métriques/
+# logs (jamais un accès direct aux backends de stockage Tempo/Prometheus/Loki
+# depuis un projet tiers), et `pyroscope`, exception délibérée à cette règle —
+# le profiling continu (§10.1) pousse en direct via son propre SDK, sans
+# passer par le Collector (protocole différent des trois autres signaux).
 networks:
   default: {}
   obs-edge:
