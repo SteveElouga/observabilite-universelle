@@ -22,11 +22,33 @@ mkdir -p "$OUT"
 OUT_ABS="$(cd "$OUT" && pwd)"
 
 for vol in grafana-data gt-db kuma-data; do
+	full=""   # jamais de report d'une itération à l'autre (sinon un $vol ambigu sans
+	          # correspondance COMPOSE_PROJECT_NAME hériterait silencieusement du $full précédent)
 	# Docker préfixe les volumes par le nom du projet (dossier) ; on retrouve le nom complet.
-	full="$(docker volume ls -q | grep -E "_${vol}\$" | head -n1)"
-	if [ -z "$full" ]; then
+	matches="$(docker volume ls -q | grep -E "_${vol}\$" || true)"
+	count="$(printf '%s\n' "$matches" | grep -c . || true)"
+	if [ "$count" -eq 0 ]; then
 		echo "volume $vol introuvable, ignoré" >&2
 		continue
+	fi
+	if [ "$count" -gt 1 ]; then
+		# Vérifié en conditions réelles le 08/09/2026 : plusieurs projets Compose nommés
+		# "observability" (ex. un durcissement testé en parallèle du socle de dev) produisent
+		# chacun un volume "*_grafana-data" etc. Un `head -n1` silencieux aurait alors sauvegardé
+		# un projet au hasard, sans le dire — pire qu'une absence de sauvegarde. On refuse plutôt
+		# de choisir : filtrez avec COMPOSE_PROJECT_NAME (ex. COMPOSE_PROJECT_NAME=observability
+		# ./backup.sh) pour ne garder que le volume de ce projet.
+		echo "plusieurs volumes correspondent à $vol, choix ambigu :" >&2
+		printf '%s\n' "$matches" | sed 's/^/  - /' >&2
+		if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+			full="$(printf '%s\n' "$matches" | grep -E "^${COMPOSE_PROJECT_NAME}_${vol}\$" || true)"
+		fi
+		if [ -z "${full:-}" ]; then
+			echo "  → définissez COMPOSE_PROJECT_NAME pour désambiguïser (ex. COMPOSE_PROJECT_NAME=observability $0), $vol ignoré" >&2
+			continue
+		fi
+	else
+		full="$matches"
 	fi
 	echo "sauvegarde de $full ..."
 	docker run --rm -v "$full":/src:ro -v "$OUT_ABS":/dst alpine \

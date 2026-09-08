@@ -38,6 +38,14 @@ services:
   glitchtip:      { ports: !override [] }
   uptime-kuma:    { ports: !override [] }
   otel-collector: { ports: !override [] }   # les apps émettent via le réseau Docker ; en prod, OTLP via le proxy TLS
+  # Manquait à l'appel jusqu'au 08/09/2026 (trouvé en activant réellement cette surcouche pour la
+  # première fois) : alloy publiait encore 12347 sur l'hôte alors que le Caddyfile reverse-proxy
+  # déjà faro.localhost vers alloy:12347 — le point de collecte Faro restait donc joignable en
+  # clair en contournant complètement Caddy (et donc le TLS), ce qui contredit l'objectif même de
+  # cette surcouche. Symptôme observé : `docker compose ... up -d --force-recreate` échouait avec
+  # « Bind for 0.0.0.0:12347 failed: port is already allocated » dès qu'une pile de base tournait
+  # déjà sur la même machine (12347 pris deux fois) — ce qui a permis de repérer l'oubli.
+  alloy:          { ports: !override [] }
 
 volumes:
   caddy-data: {}

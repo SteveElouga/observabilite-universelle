@@ -16,9 +16,15 @@ grafana.localhost {
 }
 
 # GlitchTip : a sa propre authentification, Caddy se charge du TLS.
+# Port interne 8080, pas 8000 : l'image glitchtip/glitchtip:v4.2 fait tourner uwsgi sur 8080
+# (voir le commentaire équivalent dans docker-compose.yml, service glitchtip). Écart trouvé le
+# 08/09/2026 en relisant ce fichier après le correctif du port dans docker-compose.yml (PR #33) :
+# ce reverse_proxy pointait encore sur :8000, jamais corrigé faute d'avoir déjà activé la
+# surcouche de durcissement en conditions réelles. Corrigé ici, puis vérifié par un accès réel
+# (voir hardening/README.md).
 glitchtip.localhost {
 	tls internal
-	reverse_proxy glitchtip:8000
+	reverse_proxy glitchtip:8080
 }
 
 # Point de collecte du navigateur (Faro) : exposé en TLS. Restreignez EN PLUS les origines
