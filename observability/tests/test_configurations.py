@@ -88,7 +88,10 @@ class ValidationParLesBinairesReels(unittest.TestCase):
         # Le cas de toute installation qui ne monte rien : l'image livre ce répertoire vide.
         sortie = self._verifier_avec_regles_du_consommateur({})
         self.assertTrue(sortie.startswith("code=0\n"), sortie)
-        self.assertNotIn("consommateur/", sortie)
+        # ⚠ « rules/consommateur/ » et pas « consommateur/ » : les CIBLES du projet vivent aussi dans
+        # un répertoire « targets/consommateur/ », vide dans l'image, et promtool signale à bon droit
+        # un `file_sd` sans fichier. Ce cas juge les RÈGLES ; le motif large confondait les deux.
+        self.assertNotIn("rules/consommateur/", sortie)
 
     def test_loki_accepte_sa_configuration_avec_la_retention_active(self) -> None:
         resultat = executer([
