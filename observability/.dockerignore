@@ -22,3 +22,8 @@ README.md
 # fantôme. En mode compose le fichier est toujours là, monté depuis le dépôt : rien n'est perdu
 # pour la démo, seule l'image cesse de transporter ce qui ne la regarde pas.
 prometheus/rules/rules-slo.yml
+
+# La DÉMONSTRATION de ce dépôt : un job (`blackbox-demo`) et des cibles qui visent des
+# conteneurs n'existant que dans son compose. Même raison que les SLO de démo ci-dessus.
+prometheus/scrape.d/demo.yml
+prometheus/targets/demo*

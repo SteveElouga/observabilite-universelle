@@ -2,20 +2,19 @@
 
 Un dashboard ne « casse » jamais : il affiche « No data », ce qui ressemble à du calme. Les
 sept écrans du socle en étaient là — `metier.json` interrogeait une convention `metier_*`
-qu'aucun composant SGFE n'émet, `slo.json` montrait la conformité de l'application de
-DÉMONSTRATION, et le panneau Web Vitals agrégeait `by (name)` une étiquette que le récepteur
+qu'aucun composant du projet observé n'émettait, `slo.json` montrait la conformité de
+l'application de DÉMONSTRATION, et le panneau Web Vitals agrégeait `by (name)` une étiquette que le récepteur
 Faro n'écrit pas (557 mesures pliées sous une série vide `{}`).
 
-Trois familles de contrôles, dans l'ordre de ce qui peut mentir :
+Deux familles de contrôles, dans l'ordre de ce qui peut mentir :
   1. la SYNTAXE, relue par les moteurs réels — `promtool` pour PromQL, Loki pour LogQL ;
-  2. la RÉFÉRENCE : toute règle d'enregistrement et toute source de données citée existe ;
-  3. l'ACCORD AVEC LE PRODUCTEUR : les compteurs `sgfe_*` affichés sont ceux que les neuf
-     composants déclarent réellement dans leur code.
+  2. la RÉFÉRENCE : toute règle d'enregistrement et toute source de données citée existe.
+L'accord entre les écrans d'un projet et les compteurs qu'il émet se vérifie dans le dépôt de
+ce projet, qui fournit l'un et l'autre (README, « Ce que le projet fournit »).
 """
 
 from __future__ import annotations
 
-import difflib
 import fnmatch
 import re
 import time
@@ -32,7 +31,6 @@ from outils import (
     BESOIN_DOCKER,
     IMAGE_LOKI,
     IMAGE_PROMETHEUS,
-    IMAGE_SLOTH,
     RACINE,
     ConteneurJetable,
     attendre_http,
@@ -43,16 +41,16 @@ from outils import (
 
 DASHBOARDS: Path = RACINE / "grafana/provisioning/dashboards"
 
-# Dépôt du projet consommateur, à côté de celui de la plateforme sur le poste de travail.
-# Absent en intégration continue : les contrôles qui en dépendent se déclarent ignorés
-# plutôt que de prétendre avoir vérifié quelque chose.
-BACKEND_SGFE: Path = Path.home() / "Documents" / "SGFE" / "SGFE-backend"
-
-# Séries que le consommateur n'émet PAS encore et que la plateforme réclame explicitement :
-# `SGFECronsNonInstrumentes` (prometheus/rules/sgfe.yml) sonne tant qu'elles n'existent pas.
-# Les afficher est le seul moyen de voir la lacune se combler ; les interdire ici reviendrait
-# à obliger la plateforme à ne demander que ce qu'on lui donne déjà.
-ATTENDUS_DU_BACKEND: frozenset[str] = frozenset({"sgfe_cron_last_success_timestamp_seconds"})
+# Règles d'enregistrement que Sloth (v0.16) produit pour tout SLO. Le socle ne les définit pas :
+# elles viennent des SLO générés — ceux de la démo (`rules-slo.yml`, git-ignoré) ou ceux que le
+# projet monte dans `rules/consommateur/`. Les nommer ici garde le contrôle des fautes de frappe.
+REGLES_SLOTH: frozenset[str] = frozenset({
+    "slo:current_burn_rate:ratio", "slo:error_budget:ratio", "slo:objective:ratio",
+    "slo:period_burn_rate:ratio", "slo:period_error_budget_remaining:ratio",
+    "slo:time_period:days", "sloth_slo_info",
+    *(f"slo:sli_error:ratio_rate{fenetre}" for fenetre in
+      ("5m", "30m", "1h", "2h", "6h", "1d", "3d", "30d")),
+})
 
 
 def _concretiser(expression: str) -> str:
@@ -123,28 +121,31 @@ class StructureDesTableauxDeBord(unittest.TestCase):
 
     def test_chaque_dossier_declare_par_le_fournisseur_existe(self) -> None:
         """Un `path` erroné se solde par un dossier Grafana vide, sans erreur visible."""
-        fournisseur = yaml.safe_load(
-            (DASHBOARDS / "provider.yaml").read_text(encoding="utf-8")
-        )["providers"]
-        self.assertGreaterEqual(len(fournisseur), 2, "le dossier SGFE doit être provisionné")
-        for declaration in fournisseur:
-            chemin = Path(declaration["options"]["path"])
-            with self.subTest(fournisseur=declaration["name"]):
-                local = DASHBOARDS / chemin.name
-                self.assertTrue(local.is_dir(), f"{local} n'existe pas")
-                self.assertTrue(sorted(local.glob("*.json")), f"{local} ne contient aucun dashboard")
+        fournisseurs = {
+            declaration["name"]: Path(declaration["options"]["path"])
+            for fichier in sorted(DASHBOARDS.glob("*.yaml"))
+            for declaration in yaml.safe_load(fichier.read_text(encoding="utf-8"))["providers"]
+        }
+        self.assertEqual(set(fournisseurs), {"socle", "consommateur"})
+        for nom, chemin in fournisseurs.items():
+            with self.subTest(fournisseur=nom):
+                self.assertTrue((DASHBOARDS / chemin.name).is_dir(), f"{chemin.name} n'existe pas")
+        self.assertTrue(sorted((DASHBOARDS / "socle").glob("*.json")), "le socle n'a aucun écran")
+        # Le point de montage du projet reste VIDE dans le dépôt : le `.gitkeep`, rien d'autre.
+        self.assertEqual(
+            [f.name for f in (DASHBOARDS / "consommateur").iterdir()], [".gitkeep"]
+        )
 
     def test_toute_regle_d_enregistrement_citee_est_definie(self) -> None:
-        """`instance:…`, `sgfe:…`, `slo:…` ne viennent d'aucun exportateur : une faute de
-        frappe y produit un panneau définitivement vide."""
-        definies: set[str] = set()
+        """`instance:…`, `slo:…` ne viennent d'aucun exportateur : une faute de frappe y
+        produit un panneau définitivement vide."""
+        definies: set[str] = set(REGLES_SLOTH)
         for fichier in (RACINE / "prometheus" / "rules").glob("*.yml"):
             contenu = yaml.safe_load(fichier.read_text(encoding="utf-8"))
             for groupe in contenu.get("groups") or []:
                 definies.update(
                     regle["record"] for regle in groupe.get("rules") or [] if "record" in regle
                 )
-        self.assertIn("sgfe:composant_attendu:info", definies, "les règles SGFE ne sont pas chargées")
 
         motif = re.compile(r"\b([a-z_][a-z0-9_]*:[a-z0-9_:]+)")
         for fichier in _tous_les_dashboards():
@@ -156,66 +157,8 @@ class StructureDesTableauxDeBord(unittest.TestCase):
                         self.assertIn(nom, definies)
 
 
-class ContenuMetierDesTableauxDeBord(unittest.TestCase):
-    """C-173 : les écrans doivent parler des séries de CE projet, pas d'un autre."""
-
-    # Déclaré au niveau de la classe : `setUpClass` le renseigne, et l'annoncer ici permet
-    # à mypy --strict de le suivre (une annotation posée sur `cls.x` ne compte pas).
-    expressions_sgfe: list[tuple[str, str, str]]
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.expressions_sgfe = [
-            (fichier.name, titre, expression)
-            for fichier in sorted((DASHBOARDS / "sgfe").glob("*.json"))
-            for titre, uid, expression in _requetes(fichier)
-            if uid == "prometheus"
-        ]
-
-    def test_un_dossier_sgfe_est_provisionne(self) -> None:
-        self.assertTrue(sorted((DASHBOARDS / "sgfe").glob("*.json")))
-
-    def test_les_ecrans_sgfe_n_interrogent_aucune_convention_etrangere(self) -> None:
-        """`metier_*` (convention du socle), `pg_*` et `rabbitmq_*` n'existent pas ici :
-        SGFE émet `sgfe_*`, stocke dans PostgreSQL sans exportateur branché, et utilise
-        Redis Streams — pas RabbitMQ."""
-        for fichier, titre, expression in self.expressions_sgfe:
-            with self.subTest(dashboard=fichier, panneau=titre):
-                for prefixe in ("metier_", "pg_", "rabbitmq_", "units-service"):
-                    self.assertNotIn(prefixe, expression)
-
-    def test_les_compteurs_affiches_sont_ceux_que_le_backend_declare(self) -> None:
-        """L'accord entre l'écran et le producteur, vérifié sur le code du producteur.
-
-        C'est le contrôle qui manquait : `metier_tickets_crees_total` était syntaxiquement
-        irréprochable et ne correspondait à aucun instrument déclaré.
-        """
-        if not BACKEND_SGFE.is_dir():
-            self.skipTest(f"dépôt du consommateur absent ({BACKEND_SGFE})")
-        declares: set[str] = set()
-        for source in BACKEND_SGFE.rglob("metrics.py"):
-            for point in re.findall(r'"(sgfe\.[a-z0-9_.]+)"', source.read_text(encoding="utf-8")):
-                # Le Collector traduit les points en tirets bas et suffixe les compteurs.
-                declares.add(point.replace(".", "_"))
-        self.assertTrue(declares, "aucun instrument trouvé dans le dépôt du consommateur")
-
-        # Majuscules comprises : l'unité déclarée au SDK est reprise telle quelle dans le
-        # nom exporté (`sgfe_paiement_montant_encaisse_FCFA_total`).
-        motif = re.compile(r"\bsgfe_[A-Za-z0-9_]*[A-Za-z0-9]")
-        for fichier, titre, expression in self.expressions_sgfe:
-            for nom in motif.findall(expression):
-                if nom.endswith(":info") or ":" in nom:
-                    continue
-                with self.subTest(dashboard=fichier, panneau=titre, compteur=nom):
-                    # `_total` est le suffixe que Prometheus ajoute aux compteurs ; l'unité
-                    # déclarée au SDK (`FCFA`) s'insère juste avant. On accepte donc le nom
-                    # sans suffixe, et le même amputé de son unité.
-                    racine = nom[: -len("_total")] if nom.endswith("_total") else nom
-                    candidats = {racine, re.sub(r"_[A-Za-z]+$", "", racine)}
-                    self.assertTrue(
-                        candidats & declares or nom in ATTENDUS_DU_BACKEND,
-                        f"{nom} n'est déclaré par aucun metrics.py du consommateur",
-                    )
+class ContenuDesTableauxDeBord(unittest.TestCase):
+    """C-173 : les écrans doivent lire les champs réellement écrits."""
 
     def test_le_panneau_web_vitals_lit_les_champs_reellement_ecrits(self) -> None:
         """Le récepteur Faro écrit `kind=measurement type=web-vitals lcp=… fcp=…` : UN CHAMP
@@ -355,7 +298,7 @@ class SyntaxeDesRequetes(unittest.TestCase):
 
 @BESOIN_DOCKER
 class SondesDeLApplicationObservee(unittest.TestCase):
-    """C-172 : la plateforme doit sonder SGFE, pas seulement elle-même et une démo."""
+    """C-172 : la plateforme doit sonder l'application consommatrice, pas seulement elle-même."""
 
     def test_blackbox_accepte_ses_modules(self) -> None:
         resultat = executer([
@@ -366,27 +309,40 @@ class SondesDeLApplicationObservee(unittest.TestCase):
         ])
         self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
 
-    def test_prometheus_declare_des_cibles_sgfe(self) -> None:
-        """Les jobs existent, et chacun sait relire le fichier que son profil écrira."""
-        configuration = yaml.safe_load(
-            (RACINE / "prometheus" / "prometheus.yml").read_text(encoding="utf-8")
-        )
-        jobs = {travail["job_name"]: travail for travail in configuration["scrape_configs"]}
-        for attendu in ("blackbox-sgfe-graphql", "blackbox-sgfe-http", "alertmanager"):
+    def test_prometheus_declare_des_cibles_de_l_application(self) -> None:
+        """Les jobs existent, et chacun sait relire le fichier que son profil écrira.
+
+        `blackbox-demo` vit dans `scrape.d/` depuis qu'il est sorti de l'image : on lit donc
+        les jobs comme Prometheus en compose, fichier principal ET `scrape_config_files`.
+        """
+        dossier = RACINE / "prometheus"
+        configuration = yaml.safe_load((dossier / "prometheus.yml").read_text(encoding="utf-8"))
+        travaux = list(configuration["scrape_configs"])
+        for motif in configuration.get("scrape_config_files") or []:
+            for fichier in sorted(dossier.glob(motif)):
+                travaux += yaml.safe_load(fichier.read_text(encoding="utf-8"))["scrape_configs"]
+        jobs = {travail["job_name"]: travail for travail in travaux}
+        # La démonstration de ce dépôt ne voyage pas dans l'image.
+        for nom in (travail["job_name"] for travail in configuration["scrape_configs"]):
+            with self.subTest(job_de_l_image=nom):
+                self.assertNotIn("demo", nom.lower())
+        for attendu in ("blackbox-application-graphql", "blackbox-application-http", "alertmanager",
+                        "consommateur"):
             with self.subTest(job=attendu):
                 self.assertIn(attendu, jobs)
 
         # La cible GraphQL était la SEULE cible versionnée non vide, et c'était un défaut :
-        # partout où SGFE ne tourne pas sur `obs-edge`, la sonde échoue vraiment et
+        # partout où le consommateur ne tourne pas sur `obs-edge`, la sonde échoue vraiment et
         # `ProbeDown` (severity=page) sonne en permanence — le défaut qu'on venait de
         # corriger sur `demo.yml`, reproduit ailleurs. Elle vaut « [] » et s'active par
         # profil ; ce qui doit être prouvé, c'est que le job relira bien ce que le profil
         # écrit, sinon l'activation serait sans effet.
         for job, modele, ecrit in (
-            ("blackbox-sgfe-graphql", "sgfe-graphql.yml.example", "sgfe-graphql.local.yml"),
+            ("blackbox-application-graphql", "application-graphql.yml.example",
+             "application-graphql.local.yml"),
             ("blackbox-demo", "demo.yml.example", "demo.local.yml"),
         ):
-            with self.subTest(job=job):
+            with self.subTest(job=job, modele=modele):
                 cibles = yaml.safe_load(
                     (RACINE / "prometheus" / "targets" / modele).read_text(encoding="utf-8")
                 )
@@ -403,6 +359,16 @@ class SondesDeLApplicationObservee(unittest.TestCase):
                     ),
                     f"{job} ne lirait pas {ecrit} (motifs : {motifs})",
                 )
+
+        # Le point d'entrée des cibles fournies par le projet : le job lit le répertoire
+        # qu'il monte, et le dépôt n'y met rien d'autre que le point de montage.
+        self.assertEqual(
+            jobs["consommateur"]["file_sd_configs"],
+            [{"files": ["/etc/prometheus/targets/consommateur/*.yml"]}],
+        )
+        self.assertEqual(
+            [f.name for f in (dossier / "targets" / "consommateur").iterdir()], [".gitkeep"]
+        )
 
     def test_les_cibles_de_la_demonstration_ne_sont_pas_actives_par_defaut(self) -> None:
         """Deux `ProbeDown` (severity=page) permanents venaient de ce fichier."""
@@ -470,57 +436,6 @@ class SondesDeLApplicationObservee(unittest.TestCase):
 
         self.assertEqual(resultats[0], 1.0, "une vraie réponse GraphQL doit être comptée saine")
         self.assertEqual(resultats[1], 0.0, "un 200 sans corps GraphQL ne doit PAS compter comme sain")
-
-
-
-@BESOIN_DOCKER
-class SLOGeneresEtVersionnes(unittest.TestCase):
-    """L'artefact Sloth versionné correspond-il encore à sa source ? (C-173)
-
-    Le dépôt pose que les règles produites par Sloth ne sont pas commitées
-    (`.gitignore` : `prometheus/rules/rules-slo.yml`). `slo-sgfe.yml` fait exception, et
-    délibérément : sans lui, une installation sans binaire `sloth` n'a AUCUN SLO SGFE et les
-    écrans « budget d'erreur » restent vides sans que rien ne le dise. Mais versionner un
-    artefact généré crée deux sources de vérité — rien n'empêcherait `slo/sgfe.yml` de
-    diverger des règles réellement chargées par Prometheus.
-
-    C'est cette porte qui rend l'exception tenable : elle régénère depuis l'image officielle
-    épinglée (celle de `slo/regenerer.sh`) et compare octet pour octet. Même principe que le
-    `generated.ts` du frontend : livré, et gardé par un test.
-    """
-
-    def test_le_fichier_versionne_est_exactement_celui_que_sloth_produit(self) -> None:
-        resultat = executer([
-            "docker", "run", "--rm", "-v", f"{RACINE}:/w:ro", "-w", "/w",
-            IMAGE_SLOTH, "generate", "-i", "slo/sgfe.yml",
-        ])
-        self.assertEqual(resultat.returncode, 0, resultat.stderr)
-        attendu = resultat.stdout
-        obtenu = (RACINE / "prometheus" / "rules" / "slo-sgfe.yml").read_text(encoding="utf-8")
-        if attendu != obtenu:
-            difference = "\n".join(difflib.unified_diff(
-                obtenu.splitlines(), attendu.splitlines(),
-                fromfile="prometheus/rules/slo-sgfe.yml (versionné)",
-                tofile="sloth generate -i slo/sgfe.yml (attendu)",
-                lineterm="",
-            ))
-            self.fail(
-                "slo-sgfe.yml a dérivé de slo/sgfe.yml. Régénérer : `sh slo/regenerer.sh`.\n"
-                + difference
-            )
-
-    def test_la_convention_de_versionnement_est_celle_qui_est_documentee(self) -> None:
-        """Deux artefacts, deux traitements : la différence doit être voulue, pas subie."""
-        for fichier, ignore in (("rules-slo.yml", True), ("slo-sgfe.yml", False)):
-            with self.subTest(fichier=fichier):
-                resultat = executer([
-                    "git", "-C", str(RACINE), "check-ignore", "-q",
-                    f"prometheus/rules/{fichier}",
-                ])
-                self.assertEqual(
-                    resultat.returncode == 0, ignore,
-                    f"{fichier} : statut Git contraire à ce que le README et regenerer.sh annoncent",
-                )
 
 
 if __name__ == "__main__":  # pragma: no cover

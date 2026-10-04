@@ -57,7 +57,7 @@ datasources:
         # `tags` EXPLICITE, et c'est la correction du 14/09/2026. Sans cette clé, Grafana
         # applique ses étiquettes par défaut — `service.name` → `service_name` ET
         # `service.namespace` → `service_namespace` — et compose la requête
-        # `{service_name="gateway", service_namespace="sgfe"}`. Or les flux Loki issus
+        # `{service_name="gateway", service_namespace="<projet>"}`. Or les flux Loki issus
         # d'Alloy ne portent pas `service_namespace` (un conteneur Docker n'a pas de
         # notion d'espace de noms OTel) : la requête ne rendait AUCUN flux et le bouton
         # « logs de ce span » restait vide.

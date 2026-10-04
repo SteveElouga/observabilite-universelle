@@ -196,11 +196,11 @@ class LivraisonDesAlertes(unittest.TestCase):
         self.assertIn("oneuptime_webhook_url » ABSENTE", journaux)
 
     def test_une_alerte_de_dette_ne_revient_pas_dans_le_canal_d_incident(self) -> None:
-        """C-354 : deux alertes vraies EN PERMANENCE ne doivent plus alimenter #alertes.
+        """C-354 : des alertes vraies EN PERMANENCE ne doivent plus alimenter #alertes.
 
-        `SauvegardeJamaisDeclaree` et `SGFECronsNonInstrumentes` déclarent volontairement un
-        trou d'instrumentation du dépôt observé : elles sont vraies tant qu'il n'est pas
-        comblé. On ne les supprime pas — une surveillance qui ne peut pas se déclencher
+        `SauvegardeJamaisDeclaree`, et toute règle d'un projet routée de même, déclarent
+        volontairement un trou d'instrumentation du dépôt observé : elles sont vraies tant
+        qu'il n'est pas comblé. On ne les supprime pas — une surveillance qui ne peut pas se déclencher
         rassure à tort — mais en `severity: ticket` elles repartaient dans le canal
         d'incident toutes les 24 h, c'est-à-dire le bruit que ce même chantier venait d'y
         nettoyer. La gravité `dette` les en sort.

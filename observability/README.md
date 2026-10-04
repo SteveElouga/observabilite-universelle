@@ -13,16 +13,18 @@ observability/
 ├── otel-collector-config.yaml         # pipeline central (§10.3) — connecteurs AVANT tail sampling
 ├── alloy-config.alloy                 # logs Docker → Loki + récepteur Faro → Collector
 ├── prometheus/
-│   ├── prometheus.yml
+│   ├── prometheus.yml                 # ce que l'image embarque : aucun job propre à un projet
+│   ├── scrape.d/demo.yml              # job `blackbox-demo` : compose seulement, hors image
 │   ├── targets/                       # cibles OPTIONNELLES, découvertes par fichier (README dédié)
 │   │   ├── postgres.yml               # « [] » par défaut ; l'entrypoint les remplit selon
 │   │   ├── rabbitmq.yml               #   DATA_SOURCE_NAME / RABBITMQ_METRICS_TARGET /
 │   │   ├── keycloak.yml               #   KEYCLOAK_METRICS_TARGET
-│   │   ├── sgfe-graphql.yml           # « [] » : passerelle GraphQL du consommateur, activée
-│   │   ├── sgfe-graphql.yml.example   #   par le profil `sgfe` ou SGFE_GRAPHQL_TARGET
-│   │   ├── sgfe-http.yml              # autres surfaces HTTP du consommateur (SGFE_PROBE_TARGETS)
+│   │   ├── application-graphql.yml    # « [] » : passerelle GraphQL du consommateur, activée par
+│   │   ├── application-graphql.yml.example  # le profil `application` ou APPLICATION_GRAPHQL_TARGET
+│   │   ├── application-http.yml       # autres surfaces HTTP (APPLICATION_PROBE_TARGETS)
 │   │   ├── demo.yml                   # « [] » : les sondes de la démo s'activent par profil
-│   │   ├── demo.yml.example           #   … depuis ce modèle (profil `demo`, ou DEMO_TARGETS=true)
+│   │   ├── demo.yml.example           #   … depuis ce modèle (profil `demo`) — hors image
+│   │   ├── consommateur/              # VIDE : cibles `file_sd` montées par le projet (job `consommateur`)
 │   │   └── (*.local.yml)              # écrits par les profils, ignorés par Git : aucun conteneur
 │   │                                  #   n'écrit plus dans un fichier versionné
 │   └── rules/
@@ -34,9 +36,6 @@ observability/
 │       ├── collecte.yml               # la plateforme se surveille : pertes du Collector,
 │       │                              #   notifications d'alerte en échec (écran 12)
 │       ├── veilleuse.yml              # « dead man's switch » : son SILENCE est le signal
-│       ├── sgfe.yml                   # alertes du CONSOMMATEUR (WhatsApp, crons, composants)
-│       ├── slo-sgfe.yml               # SLO SGFE multi-burn-rate : GÉNÉRÉ par sloth, et
-│       │                              #   VERSIONNÉ — voir « SLO générés » plus bas
 │       ├── consommateur/              # VIDE dans l'image : les règles d'un projet observé,
 │       │                              #   montées par lui (« Règles d'un consommateur »)
 │       └── (rules-slo.yml)            # SLO de la démo : généré par sloth, hors Git
@@ -58,7 +57,8 @@ observability/
 ├── hardening/                         # durcissement §7.4 : Caddy TLS, ports dépubliés, backup.sh
 ├── grafana/provisioning/
 │   ├── datasources/datasources.yaml   # LA corrélation : métrique→trace→log→profil (§10.5)
-│   ├── dashboards/provider.yaml       # déclaration des dossiers « Socle » et « SGFE »
+│   ├── dashboards/provider.yaml       # dossiers « Socle » (versionné) et « Projet » (monté)
+│   ├── dashboards/consommateur/       # VIDE : les écrans du projet observé, montés par lui
 │   ├── dashboards/socle/              # les 7 dashboards GÉNÉRIQUES en JSON versionné (§8.3)
 │   │   ├── ensemble.json              #   vue d'ensemble : santé, RED global, saturation
 │   │   ├── service.json               #   par service, sélecteur $service — remplace 5 copies
@@ -67,15 +67,11 @@ observability/
 │   │   ├── evenements.json            #   débit, arriéré, files de rebut
 │   │   ├── metier.json                #   compteurs applicatifs (convention documentée)
 │   │   └── slo.json                   #   budget d'erreur et vitesse de consommation
-│   └── dashboards/sgfe/               # les écrans du CONSOMMATEUR, sur ses compteurs sgfe_*
-│       ├── metier.json                #   factures, encaissements, parc d'abonnés, campagnes
-│       └── exploitation.json          #   canal WhatsApp, présence des composants, sondes, SLO
 ├── tests/                             # la suite qui prouve tout ce qui précède (voir plus bas)
 ├── k6/smoke.js                        # parcours synthétique (§10.7)
 └── slo/
-    ├── regenerer.sh                   # régénère les deux fichiers de règles (sloth épinglé)
-    ├── units-service.yml              # SLO Sloth de la démo (§10.6)
-    └── sgfe.yml                       # SLO Sloth du consommateur → rules/slo-sgfe.yml
+    ├── regenerer.sh                   # régénère les règles SLO de la démo (sloth épinglé)
+    └── units-service.yml              # SLO Sloth de la démo (§10.6)
 ```
 
 ## Mise en route (§10.9)
@@ -118,14 +114,13 @@ les canaux dont le secret existe **et n'est pas vide**. Pas de secret, pas d'int
 **Quatre gravités, quatre destins.** `page` → astreinte (Slack + e-mail + OneUptime, rappel
 toutes les heures) ; `ticket` → Slack, une fois par jour ; `veilleuse` → surveillant externe,
 toutes les 5 minutes ; **`dette`** → canal de dette technique, **une fois par semaine**. Cette
-dernière existe parce que deux règles déclarent volontairement un trou d'instrumentation du
-dépôt observé — `SauvegardeJamaisDeclaree`, `SGFECronsNonInstrumentes` — et sont donc vraies en
-permanence jusqu'à ce qu'il soit comblé. On ne les supprime pas (une surveillance qui ne peut
+dernière existe parce que des règles déclarent volontairement un trou d'instrumentation du
+dépôt observé — `SauvegardeJamaisDeclaree` dans le socle, et toute règle d'un projet routée de
+même — et sont donc vraies en permanence jusqu'à ce qu'il soit comblé. On ne les supprime pas (une surveillance qui ne peut
 pas se déclencher rassure à tort), mais elles n'ont rien à faire dans le canal d'incident :
 laissées en `ticket`, elles y revenaient toutes les 24 h, c'est-à-dire le bruit récurrent que
-C-354 venait de nettoyer. Chacune porte une annotation `suivi` avec le constat d'origine et une
-**échéance de revue** (15/12/2026) : passé cette date, on tranche — instrumenter, ou retirer la
-règle — plutôt que de laisser une alerte se répéter indéfiniment.
+C-354 venait de nettoyer. Chacune porte une annotation `suivi` qui dit quoi **trancher** —
+instrumenter, ou retirer la règle — plutôt que de laisser une alerte se répéter indéfiniment.
 
 Deux garde-fous complètent le dispositif : la règle **`ChaineAlertingVivante`**
 (`prometheus/rules/veilleuse.yml`) est active en permanence et doit parvenir toutes les
@@ -201,6 +196,69 @@ Une API GraphQL reçoit tout sur `POST /graphql`. Le serveur qui suit la convent
 
 Pour voir ses opérations, un consommateur déclare donc les noms qu'il émet. Une ligne `autre` qui grossit dans le tableau signale une opération à déclarer ou un client qui forge des noms.
 
+## Ce que le projet fournit
+
+La plateforme est un **greffon** : ni l'image `nyobeelouga5/observabilite`, ni ce dépôt ne
+contiennent quoi que ce soit d'un projet observé — ni règle, ni tableau, ni cible, ni nom de
+service. C'est le projet qui apporte, depuis son propre dépôt, ce dont la plateforme a besoin
+pour parler de lui. Six points d'entrée, tous facultatifs : absents ou vides, ils ne déclarent
+rien et ne lèvent aucune erreur.
+
+| Le projet fournit | Où la plateforme le lit | Effet |
+|---|---|---|
+| Règles d'alerte et d'enregistrement, SLO générés compris | `/etc/prometheus/rules/consommateur/*.yml` | chargées avec celles du socle (`rule_files`) |
+| Tableaux de bord Grafana (JSON) | `/etc/grafana/provisioning/dashboards/consommateur/` | dossier Grafana « Projet » |
+| Cibles Prometheus (`file_sd`) | `/etc/prometheus/targets/consommateur/*.yml` | job `consommateur` ; étiquettes, `__metrics_path__` et `__scheme__` posés par le projet |
+| Sondes de son application | `APPLICATION_GRAPHQL_TARGET`, `APPLICATION_PROBE_TARGETS` | jobs `blackbox-application-graphql` et `blackbox-application-http` (`prometheus/targets/README.md`) |
+| Opérations GraphQL ventilées | `GRAPHQL_OPERATIONS_CONNUES` (Collector) | liste blanche des noms d'opération ; tout autre nom devient `autre` |
+| Périmètre des journaux | `LOGS_COMPOSE_PROJECTS` (Alloy) | projets Compose dont les journaux sont ingérés |
+
+Ses runbooks restent chez lui : l'annotation `runbook_url` de ses règles pointe vers son dépôt.
+Le routage, lui, est celui du socle — `severity` vaut `page`, `ticket` ou `dette` (voir
+« Livraison des alertes »), et une règle porte `service_name` pour l'inhibition.
+
+**Exemple — mode image**, dans le compose du projet :
+
+```yaml
+services:
+  observabilite:
+    image: nyobeelouga5/observabilite:<version>
+    environment:
+      APPLICATION_GRAPHQL_TARGET: http://mon-api:8000/graphql
+      GRAPHQL_OPERATIONS_CONNUES: "ListerCommandes|CreerCommande"
+    volumes:
+      - ./observabilite/regles:/etc/prometheus/rules/consommateur:ro
+      - ./observabilite/tableaux:/etc/grafana/provisioning/dashboards/consommateur:ro
+      - ./observabilite/cibles:/etc/prometheus/targets/consommateur:ro
+      - obs-data:/var/lib/obs
+```
+
+**Exemple — mode compose** (ce dépôt) : une surcouche ajoute les mêmes montages aux services
+`prometheus` et `grafana`. Les répertoires `consommateur/` existent dans le dépôt (un
+`.gitkeep`) parce que `./prometheus` et `./grafana/provisioning` y sont montés en lecture
+seule : Docker ne pourrait pas y créer le point de montage.
+
+```yaml
+# docker compose -f docker-compose.yml -f /chemin/du/projet/observabilite/compose.yml up -d
+services:
+  prometheus:
+    volumes:
+      - /chemin/du/projet/observabilite/regles:/etc/prometheus/rules/consommateur:ro
+      - /chemin/du/projet/observabilite/cibles:/etc/prometheus/targets/consommateur:ro
+  grafana:
+    volumes:
+      - /chemin/du/projet/observabilite/tableaux:/etc/grafana/provisioning/dashboards/consommateur:ro
+```
+
+Les chemins sont absolus : Compose résout les chemins relatifs d'une surcouche depuis le
+répertoire du PREMIER fichier, c'est-à-dire celui de la plateforme.
+
+**La neutralité est gardée par deux tests** (`tests/test_configurations.py`) : l'un cherche dans
+tout le dépôt, noms de fichiers compris, le nom des projets connus ; l'autre reconstruit les
+`COPY` du Dockerfile avec le vrai `.dockerignore` et cherche les mêmes noms dans l'image. La
+démonstration de ce dépôt (job `blackbox-demo`, `prometheus/scrape.d/demo.yml`, cibles
+`targets/demo*`) reste hors de l'image : elle ne tourne qu'en compose, par `--profile demo`.
+
 ## Mémoire et redémarrage : deux moitiés d'une même protection
 
 Le 12/09/2026, **Loki, Tempo et Pyroscope sont sortis en code 137 (OOMKilled) et sont restés
@@ -218,14 +276,14 @@ Deux réglages, indissociables :
 
 Poser un plafond sans reprise n'avance que l'heure de la mort. **Tous** les services durables
 portent donc `restart: unless-stopped` ; seuls les trois one-shot (`demo-targets`,
-`sgfe-targets`, `glitchtip-migrate`) gardent `restart: "no"`, les relancer en boucle n'ayant
+`application-targets`, `glitchtip-migrate`) gardent `restart: "no"`, les relancer en boucle n'ayant
 aucun sens. Un `docker compose stop` explicite reste respecté — c'est la différence avec
 `always`, et la raison du choix.
 
 **Ordre de grandeur à surveiller avant de toucher aux plafonds.** Leur somme vaut ≈ 6,5 Gio
 (768 Mio Collector + 2 Gio Prometheus + 1 Gio × 3 pour Loki/Tempo/Pyroscope + 512 Mio Alloy +
 256 Mio Alertmanager) pour une VM Docker de **7,75 Gio** sur le poste de recette, partagée avec
-une quarantaine de conteneurs SGFE. Comme un plafond ne réserve rien, l'OOM killer de l'hôte
+une quarantaine de conteneurs du projet observé. Comme un plafond ne réserve rien, l'OOM killer de l'hôte
 frappe malgré eux dès que la somme des consommations **réelles** dépasse la VM : la reprise
 automatique borne alors l'incident à quelques secondes, mais seule une VM correctement
 dimensionnée (Docker Desktop → *Settings* → *Resources*) le fait disparaître.
@@ -235,29 +293,20 @@ et ne figurait dans aucune sonde : sa mort était invisible par construction. Il
 job `blackbox-platform` (`/ready`), aux côtés d'Alertmanager. `CibleInjoignable` et `ProbeDown`
 couvrent le reste.
 
-## SLO générés : livrés, et vérifiés
+## SLO générés
 
-Deux artefacts Sloth cohabitent avec deux traitements **différents**, et c'est délibéré :
-
-| Fichier | Statut | Pourquoi |
-|---|---|---|
-| `prometheus/rules/rules-slo.yml` (démo) | **git-ignoré** | ne concerne que qui lance le profil `demo`, et peut le régénérer |
-| `prometheus/rules/slo-sgfe.yml` (consommateur) | **versionné** | sans lui, une installation sans binaire `sloth` n'a aucun SLO SGFE et les écrans « budget d'erreur » restent vides sans que rien ne le dise |
-
-Versionner un artefact généré crée deux sources de vérité : rien n'empêcherait `slo/sgfe.yml`
-de diverger des règles réellement chargées. D'où **`slo/regenerer.sh`**, qui régénère les deux
-depuis l'image officielle épinglée (`ghcr.io/slok/sloth:v0.16.0` — un binaire local d'une autre
-version produirait une dérive à chaque exécution), et la porte
-`tests/test_tableaux_de_bord.py::SLOGeneresEtVersionnes`, qui **échoue si le fichier versionné
-ne correspond plus à sa source**. Même principe que le `generated.ts` du frontend : livré, et
-gardé par un test.
+`prometheus/rules/rules-slo.yml`, les SLO de la démo, est **git-ignoré** : il ne concerne que qui
+lance le profil `demo`, et `sh slo/regenerer.sh` le régénère depuis l'image officielle épinglée
+(`ghcr.io/slok/sloth:v0.16.0` — un binaire local d'une autre version produirait une dérive à
+chaque exécution). Les SLO d'un projet observé vivent dans son dépôt : il les génère, les
+versionne s'il le veut, et les monte avec ses règles dans `rules/consommateur/`.
 
 ## Écarts assumés avec la §10 du document *(correctifs d'exécutabilité, reportés dans le document)*
 
 1. **Webhook Slack en `api_url_file`, inséré au rendu** — Alertmanager ne substitue pas les variables d'environnement dans sa configuration ; le webhook vit dans `alertmanager/secrets/slack_webhook_url` (hors Git), monté dans le conteneur, et n'entre dans la configuration effective que s'il existe (voir « Livraison des alertes »).
 2. **`glitchtip-migrate` + healthcheck Postgres** — sans migrations ni attente de la base, le premier démarrage de GlitchTip échoue ; service one-shot + `depends_on: service_healthy / service_completed_successfully`.
 3. **Télémétrie du Collector sur `0.0.0.0:8888`** — depuis les versions récentes, le Collector n'expose ses métriques internes que sur `localhost` ; sans ce réglage, le job Prometheus `otel-collector` (écran 12) ne collecte rien.
-4. **Alloy : `service_name` = nom de service Compose, et traces Faro via le Collector** — le label `container` seul ne suffit pas : Loki dérive alors `service_name` du nom de CONTENEUR (`sgfe-backend-gateway-1`) alors que traces et métriques portent l'`OTEL_SERVICE_NAME` (`gateway`), et le bouton « logs de ce span » ne rend aucun flux. `discovery.relabel` promeut donc le nom de service Compose, et le pipeline Faro reprend `app_name`. Les traces frontend passent par le Collector (règle §3) pour bénéficier du tail sampling et des métriques dérivées.
+4. **Alloy : `service_name` = nom de service Compose, et traces Faro via le Collector** — le label `container` seul ne suffit pas : Loki dérive alors `service_name` du nom de CONTENEUR (`monprojet-gateway-1`) alors que traces et métriques portent l'`OTEL_SERVICE_NAME` (`gateway`), et le bouton « logs de ce span » ne rend aucun flux. `discovery.relabel` promeut donc le nom de service Compose, et le pipeline Faro reprend `app_name`. Les traces frontend passent par le Collector (règle §3) pour bénéficier du tail sampling et des métriques dérivées.
 5. **`deployment.environment` en `insert`, jamais en `upsert`** — le Collector ne doit pas écraser l'environnement déclaré par un SDK, sous peine d'étiqueter `prod` toute la télémétrie de développement. La clé stable de la convention sémantique est `deployment.environment.name` ; l'ancienne reste alimentée le temps de la migration. ⚠ **Effet de bord à connaître de l'exploitation** : `resource_to_telemetry_conversion` reporte ces attributs en étiquettes, donc au premier redéploiement après ce changement, toute série qui portait `deployment_environment="prod"` à tort change d'identité et gagne `deployment_environment_name`. Les `rate()` / `increase()` verront **une** discontinuité, une seule fois. C'est le prix de la correction, pas un défaut — mais il vaut mieux le lire ici que le découvrir sur un graphique.
 6. **Périmètre de collecte des journaux** — `discovery.docker` voit *tous* les conteneurs du démon. `LOGS_COMPOSE_PROJECTS` (défaut `.+`) borne l'ingestion aux projets Compose voulus : sans lui, les conteneurs d'autres projets finissent dans un Loki mono-tenant et sans authentification.
 
@@ -269,14 +318,11 @@ Trois de ces alertes et deux de ces dashboards dépendent d'un composant que la 
 
 Le générique ne dispense pas du spécifique, et c'est la leçon de la revue du 14/09/2026 : une
 plateforme peut être irréprochable et ne rien dire de l'application qu'elle observe. Le projet
-consommateur a donc ses propres règles (`prometheus/rules/sgfe.yml`), ses propres SLO
-(`slo/sgfe.yml`) et ses propres écrans (`grafana/provisioning/dashboards/sgfe/`), à côté du
-socle et sans le modifier. Deux alertes y **déclarent un trou d'instrumentation** au lieu de
-rester silencieuses — `SGFECronsNonInstrumentes`, `SauvegardeJamaisDeclaree` : une surveillance
-qui ne peut pas se déclencher est pire que pas de surveillance, parce qu'elle rassure. Elles
-sont routées en `severity: dette`, hors du canal d'incident et une fois par semaine, avec une
-échéance de revue au 15/12/2026 — visibles sans redevenir du bruit (voir « Livraison des
-alertes »).
+observé apporte donc ses propres règles, SLO et écrans, à côté du socle et sans le modifier
+(voir « Ce que le projet fournit »). Une règle qui **déclare un trou d'instrumentation** au lieu
+de rester silencieuse — comme `SauvegardeJamaisDeclaree` dans le socle — se route en
+`severity: dette`, hors du canal d'incident et une fois par semaine, avec une annotation `suivi` :
+visible sans redevenir du bruit (voir « Livraison des alertes »).
 
 ## Tests
 
@@ -288,12 +334,11 @@ la rétention est-elle *effective* dans `/config` ; Alloy pose-t-il le bon `serv
 Loki accepte-t-il les requêtes des tableaux de bord. Cette exigence vient d'un constat : tous
 les défauts corrigés ici passaient la validation statique.
 
-Trois preuves valent d'être connues, parce qu'elles n'existaient sous aucune autre forme :
+Deux preuves valent d'être connues, parce qu'elles n'existaient sous aucune autre forme :
 l'incident du 12/09 est **rejoué** (un conteneur plafonné à 32 Mio qui en réclame 256 ; sans
 politique il meurt en 137 et personne ne le relève, avec `unless-stopped` il revient seul) ; les
 deux services d'activation des sondes sont **exécutés** dans un répertoire jetable, et chaque
-fichier qu'ils écrivent doit être ignoré par Git *et* relu par un job Prometheus ; et
-`slo-sgfe.yml` est **régénéré** par l'image Sloth épinglée puis comparé octet pour octet.
+fichier qu'ils écrivent doit être ignoré par Git *et* relu par un job Prometheus.
 
 ```sh
 cd observability/tests && python3 -m unittest discover -v     # Docker requis, ~9 min

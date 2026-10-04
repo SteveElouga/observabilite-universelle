@@ -2,11 +2,11 @@
 //
 // POURQUOI ELLE DIFFÈRE DE alloy-config.alloy. L'amont a deux rôles : collecter les logs des
 // conteneurs Docker, et recevoir les événements Faro du navigateur. Le premier exige de monter
-// /var/run/docker.sock dans le conteneur — or FT-2 de GP-Formuloo a précisément SUPPRIMÉ les
+// /var/run/docker.sock dans le conteneur — or le premier consommateur a précisément SUPPRIMÉ les
 // montages de ce socket pour raison de sécurité, en retirant Traefik. Le remonter reviendrait
 // sur une décision prise.
 //
-// Les logs de GP-Formuloo n'en pâtissent pas : le pipeline `logs` du Collector accepte déjà
+// Les logs du consommateur n'en pâtissent pas : le pipeline `logs` du Collector accepte déjà
 // l'OTLP et exporte vers Loki (voir otel-collector-config.yaml). Les services émettent donc
 // leurs logs en OTEL_LOGS_EXPORTER=otlp, et personne ne lit le socket.
 //

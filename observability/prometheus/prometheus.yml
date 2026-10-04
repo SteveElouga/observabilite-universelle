@@ -6,6 +6,11 @@ global: { scrape_interval: 15s, evaluation_interval: 15s }
 # pas de point de montage sous un `./prometheus` déjà monté en `:ro`). Un motif sans fichier ne
 # déclare rien et ne lève aucune erreur — prouvé par tests/test_configurations.py.
 rule_files: ["rules/*.yml", "rules/consommateur/*.yml"]   # red.yml + rules-slo.yml (sloth, voir README)
+# Jobs de DÉMONSTRATION, hors de ce fichier parce que ce fichier voyage dans l'image publiée :
+# `scrape.d/demo.yml` (job `blackbox-demo`) est monté en compose et exclu de l'image par
+# .dockerignore. Un motif qui ne correspond à aucun fichier est accepté sans erreur — vérifié
+# avec `promtool check config` de Prometheus v3.1.0 — : l'image démarre donc sans lui.
+scrape_config_files: ["scrape.d/*.yml"]
 alerting:
   alertmanagers: [{ static_configs: [{ targets: ["alertmanager:9093"] }] }]
 scrape_configs:
@@ -47,55 +52,37 @@ scrape_configs:
       - { source_labels: [__param_target], target_label: instance }
       - { target_label: __address__, replacement: "blackbox-exporter:9115" }
 
-  # Endpoints de la DÉMO. Découverts par fichier, et non écrits en dur, pour une raison
-  # constatée à la recette : en mode image, ces deux conteneurs n'existent pas. Tant que
-  # blackbox-exporter n'était pas embarqué, le job tombait entier et personne ne le voyait ;
-  # depuis qu'il tourne, les sondes échouent VRAIMENT et « ProbeDown » sonnerait sans fin chez
-  # le consommateur. Le fichier versionné vaut donc « [] » depuis le 14/09/2026 : c'est le
-  # profil `demo` qui le remplit (voir prometheus/targets/README.md), dans les deux modes.
-  - job_name: blackbox-demo
-    metrics_path: /probe
-    params: { module: [http_local] }
-    # Motif et non nom de fichier : `demo.yml` est le fichier VERSIONNÉ (« [] »), et
-    # `demo.local.yml` celui qu'écrit le service one-shot `demo-targets` — ignoré par Git,
-    # donc une démonstration ne salit plus le dépôt. Un motif qui ne correspond à aucun
-    # fichier ne déclare aucune cible et ne produit aucune erreur (vérifié sur Prometheus
-    # v3.1.0 : le journal ne contient ni « error » ni « no such file »).
-    file_sd_configs: [{ files: ["/etc/prometheus/targets/demo*.yml"] }]
-    relabel_configs:
-      - { source_labels: [__address__], target_label: __param_target }
-      - { source_labels: [__param_target], target_label: instance }
-      - { target_label: __address__, replacement: "blackbox-exporter:9115" }
-
-  # --- Sondes de l'APPLICATION OBSERVÉE (SGFE). Sans elles, la plateforme voyait la santé de
-  #     Grafana et d'une démo, mais rien de l'application réelle : 100 % des envois WhatsApp
-  #     échouaient depuis deux jours sans qu'aucune alerte n'existe (constat du 11/09/2026).
+  # --- Sondes de l'APPLICATION CONSOMMATRICE. Sans elles, la plateforme voyait la santé de
+  #     Grafana et d'une démo, mais rien de l'application réelle : 100 % des envois d'un canal
+  #     de messagerie échouaient depuis deux jours chez un consommateur sans qu'aucune alerte
+  #     n'existe (constat du 11/09/2026).
   #
   #     Deux jobs, parce que les deux familles de cibles ne se sondent pas pareil :
-  #       · `blackbox-sgfe-graphql` : la passerelle GraphQL, joignable par nom sur le réseau
-  #         partagé `obs-edge`, sondée par une requête `{__typename}` (module http_graphql).
-  #       · `blackbox-sgfe-http`    : les surfaces qui NE SONT PAS sur `obs-edge` (nginx,
-  #         whatsapp-service) — adresses fournies par le consommateur, fichier « [] » sinon.
+  #       · `blackbox-application-graphql` : la passerelle GraphQL, joignable par nom sur le
+  #         réseau partagé `obs-edge`, sondée par une requête `{__typename}` (module http_graphql).
+  #       · `blackbox-application-http`    : les surfaces qui NE SONT PAS sur `obs-edge` (proxy,
+  #         passerelles tierces) — adresses fournies par le consommateur, fichier « [] » sinon.
   #
   #     Les DEUX fichiers valent « [] » dans Git depuis le 15/09/2026. La passerelle GraphQL
-  #     faisait exception, écrite en dur : sur toute installation où SGFE ne tourne pas sur
-  #     `obs-edge` — un poste qui ne lance que le socle, par exemple — la sonde échoue vraiment
-  #     et « ProbeDown » (severity=page) sonne en permanence, c'est-à-dire exactement le défaut
-  #     corrigé la veille sur `demo.yml`. L'activation est donc explicite ici aussi : profil
-  #     `sgfe` en compose, `SGFE_GRAPHQL_TARGET` en mode image (prometheus/targets/README.md).
-  - job_name: blackbox-sgfe-graphql
+  #     faisait exception, écrite en dur : sur toute installation où le consommateur ne tourne
+  #     pas sur `obs-edge` — un poste qui ne lance que le socle, par exemple — la sonde échoue
+  #     vraiment et « ProbeDown » (severity=page) sonne en permanence, c'est-à-dire exactement le
+  #     défaut corrigé la veille sur les cibles de démonstration. L'activation est donc explicite :
+  #     profil `application` en compose, `APPLICATION_GRAPHQL_TARGET` et
+  #     `APPLICATION_PROBE_TARGETS` en mode image (prometheus/targets/README.md).
+  - job_name: blackbox-application-graphql
     metrics_path: /probe
     params: { module: [http_graphql] }
-    file_sd_configs: [{ files: ["/etc/prometheus/targets/sgfe-graphql*.yml"] }]
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/application-graphql*.yml"] }]
     relabel_configs:
       - { source_labels: [__address__], target_label: __param_target }
       - { source_labels: [__param_target], target_label: instance }
       - { target_label: __address__, replacement: "blackbox-exporter:9115" }
 
-  - job_name: blackbox-sgfe-http
+  - job_name: blackbox-application-http
     metrics_path: /probe
     params: { module: [http_local] }
-    file_sd_configs: [{ files: ["/etc/prometheus/targets/sgfe-http.yml"] }]
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/application-http.yml"] }]
     relabel_configs:
       - { source_labels: [__address__], target_label: __param_target }
       - { source_labels: [__param_target], target_label: instance }
@@ -113,6 +100,15 @@ scrape_configs:
 
   - job_name: keycloak                 # alerte « échecs de connexion anormaux » §8.4
     file_sd_configs: [{ files: ["/etc/prometheus/targets/keycloak.yml"] }]
+
+  # --- Cibles FOURNIES PAR LE PROJET OBSERVÉ : il monte ses fichiers `file_sd` dans
+  #     `targets/consommateur/` (lecture seule ; répertoire vide dans l'image, `.gitkeep` dans
+  #     le dépôt pour le mode compose). Le job ne nomme aucun projet : c'est le projet qui pose
+  #     ses étiquettes, et `__metrics_path__` / `__scheme__` s'il le faut, dans ses fichiers.
+  #     Répertoire vide = aucune cible, aucune série, aucune erreur. README, « Ce que le
+  #     projet fournit ».
+  - job_name: consommateur
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/consommateur/*.yml"] }]
 
   # --- Gabarit PROD : cibles publiques en HTTPS (module http_2xx, exige un TLS valide).
   #     Décommentez et remplacez par vos URLs une fois la plateforme exposée derrière un proxy TLS.

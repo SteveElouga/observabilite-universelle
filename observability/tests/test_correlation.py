@@ -29,6 +29,23 @@ from outils import (
 )
 
 
+# Le test apporte ses propres projets Compose au lieu de dépendre de ce qui tourne sur le
+# poste : deux conteneurs jetables étiquetés comme Compose, l'un déclaré dans
+# `LOGS_COMPOSE_PROJECTS`, l'autre non. Un périmètre `.+` ferait du test C-355 une tautologie.
+PROJET_DECLARE: str = "obs-test-declare"
+PROJET_INTRUS: str = "obs-test-intrus"
+IMAGE_LEURRE: str = "busybox:1.37"
+
+
+def _leurre(projet: str) -> ConteneurJetable:
+    """Conteneur nommé comme Compose le ferait (`<projet>-<service>-1`), sans Compose."""
+    return ConteneurJetable(f"{projet}-appli-1", [
+        "--label", f"com.docker.compose.project={projet}",
+        "--label", "com.docker.compose.service=appli",
+        IMAGE_LEURRE, "sleep", "300",
+    ])
+
+
 def _valeur_alloy(noeud: dict[str, Any]) -> Any:
     """Convertit la représentation typée de l'API d'Alloy en objets Python."""
     type_ = noeud.get("type")
@@ -48,15 +65,19 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
     port: int
     _conteneur: ConteneurJetable
     cibles: list[dict[str, Any]]
+    _leurres: list[ConteneurJetable]
 
     @classmethod
     def setUpClass(cls) -> None:
+        cls._leurres = [_leurre(PROJET_DECLARE), _leurre(PROJET_INTRUS)]
+        for leurre in cls._leurres:
+            leurre.__enter__()
         cls.port = port_libre()
         cls._conteneur = ConteneurJetable("obs-test-alloy-relabel", [
             "-p", f"127.0.0.1:{cls.port}:{cls.port}",
             "-v", f"{RACINE}/alloy-config.alloy:/cfg.alloy:ro",
             "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
-            "-e", "LOGS_COMPOSE_PROJECTS=sgfe-.*|observability",
+            "-e", f"LOGS_COMPOSE_PROJECTS={PROJET_DECLARE}",
             "--entrypoint", "/bin/alloy", IMAGE_ALLOY,
             "run", "/cfg.alloy", f"--server.http.listen-addr=0.0.0.0:{cls.port}",
             "--storage.path=/tmp/alloy",
@@ -79,12 +100,14 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls._conteneur.__exit__()
+        for leurre in cls._leurres:
+            leurre.__exit__()
 
     def test_le_label_service_name_vaut_le_nom_de_service_compose(self) -> None:
         """C'est CE label que Grafana interroge depuis un span (`service.name` → `service_name`).
 
         Avant correction, Alloy ne posait que `container` et Loki dérivait lui-même
-        `service_name="sgfe-backend-gateway-1"` (nom de CONTENEUR), alors que Tempo et
+        `service_name="monprojet-gateway-1"` (nom de CONTENEUR), alors que Tempo et
         Prometheus portent `service_name="gateway"` : la requête ne rendait aucun flux.
         """
         self.assertTrue(self.cibles, "aucun conteneur découvert : le test ne prouve rien")
@@ -105,7 +128,7 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
     def test_service_name_n_est_plus_le_nom_de_conteneur(self) -> None:
         """La régression exacte de C-168.
 
-        Loki dérivait `service_name` du nom de conteneur (`sgfe-backend-gateway-1`) quand
+        Loki dérivait `service_name` du nom de conteneur (`monprojet-gateway-1`) quand
         aucun label n'était fourni. Un nom de service Compose n'est jamais égal au nom de
         conteneur par défaut, qui y ajoute projet et index.
         """
@@ -116,25 +139,10 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
             with self.subTest(conteneur=cible["container"]):
                 self.assertNotEqual(cible["service_name"], cible["container"])
 
-    def test_les_neuf_composants_sgfe_portent_le_nom_otel_attendu(self) -> None:
-        """Vérification nominale sur ce que la pile locale expose réellement."""
-        vus = {c["service_name"] for c in self.cibles if c.get("compose_project") == "sgfe-backend"}
-        if not vus:
-            self.skipTest("la pile sgfe-backend ne tourne pas sur cette machine")
-        attendus = {
-            "gateway", "auth-service", "abonne-service", "campagne-service",
-            "facturation-service", "paiement-service", "notification-service",
-            "reporting-service", "config-service",
-        }
-        self.assertEqual(attendus - vus, set(), f"composants sans flux étiqueté : {attendus - vus}")
-
     def test_seuls_les_projets_compose_declares_sont_ingeres(self) -> None:
         """C-355 : 84 conteneurs de l'hôte, dont d'autres projets clients, finissaient dans Loki."""
         projets = {c.get("compose_project") for c in self.cibles}
-        self.assertTrue(projets, "aucun projet découvert")
-        for projet in projets:
-            with self.subTest(projet=projet):
-                self.assertRegex(projet or "", r"^(sgfe-.*|observability)$")
+        self.assertEqual(projets, {PROJET_DECLARE}, "seul le projet déclaré doit être ingéré")
 
     def test_aucun_conteneur_hors_compose_n_est_ingere(self) -> None:
         for cible in self.cibles:
@@ -216,7 +224,7 @@ class SourcesDeDonneesGrafana(unittest.TestCase):
     def test_le_saut_trace_vers_journaux_n_interroge_que_service_name(self) -> None:
         """Sans `tags` explicite, Grafana ajoute `service.namespace` → `service_namespace`,
         étiquette qu'aucun flux Loki issu d'un conteneur Docker ne porte : la requête
-        `{service_name="gateway", service_namespace="sgfe"}` ne rendait rien."""
+        `{service_name="gateway", service_namespace="monprojet"}` ne rendait rien."""
         tags = self._tempo()["jsonData"]["tracesToLogsV2"]["tags"]
         self.assertEqual(tags, [{"key": "service.name", "value": "service_name"}])
 

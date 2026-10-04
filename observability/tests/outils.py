@@ -34,10 +34,6 @@ IMAGE_TEMPO: Final[str] = "grafana/tempo:2.7.0"
 IMAGE_COLLECTOR: Final[str] = "otel/opentelemetry-collector-contrib:0.116.1"
 IMAGE_ALLOY: Final[str] = "grafana/alloy:v1.6.1"
 IMAGE_BLACKBOX: Final[str] = "prom/blackbox-exporter:v0.25.0"
-# Générateur de règles SLO. Épinglé sur la MÊME version que `slo/regenerer.sh` : un
-# binaire local d'une autre version produit un fichier différent à chaque exécution,
-# et la porte anti-dérive se mettrait à échouer pour une raison sans rapport.
-IMAGE_SLOTH: Final[str] = "ghcr.io/slok/sloth:v0.16.0"
 
 
 def docker_disponible() -> bool:
@@ -134,7 +130,7 @@ class ConteneurJetable:
     """Conteneur de test démarré puis supprimé, quoi qu'il arrive.
 
     Volontairement indépendant de la pile qui tourne : aucun test ne doit toucher aux
-    conteneurs `observability-*` ni `sgfe-*` en service.
+    conteneurs `observability-*` ni à ceux d'un projet observé en service.
     """
 
     def __init__(self, nom: str, arguments: list[str]) -> None:

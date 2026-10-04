@@ -1,0 +1,25 @@
+# prometheus/scrape.d/demo.yml — job de la DÉMONSTRATION, lu par `scrape_config_files`.
+#
+# Il vivait dans prometheus.yml jusqu'au 04/10/2026, et voyageait donc dans l'image publiée :
+# chaque consommateur voyait un job `blackbox-demo` qui visait des conteneurs n'existant que
+# dans le compose de ce dépôt. Séparé, il reste chargé en compose (le répertoire prometheus/
+# est monté tel quel) et .dockerignore l'écarte de l'image.
+scrape_configs:
+  # Endpoints de la DÉMO. Découverts par fichier, et non écrits en dur : même en compose, ces
+  # deux conteneurs n'existent que sous le profil `demo`, et une cible absente fait VRAIMENT
+  # échouer la sonde — « ProbeDown » (severity=page) sonnerait sans fin. Le fichier versionné
+  # vaut donc « [] » depuis le 14/09/2026 : c'est le profil `demo` qui le remplit (voir
+  # prometheus/targets/README.md).
+  - job_name: blackbox-demo
+    metrics_path: /probe
+    params: { module: [http_local] }
+    # Motif et non nom de fichier : `demo.yml` est le fichier VERSIONNÉ (« [] »), et
+    # `demo.local.yml` celui qu'écrit le service one-shot `demo-targets` — ignoré par Git,
+    # donc une démonstration ne salit plus le dépôt. Un motif qui ne correspond à aucun
+    # fichier ne déclare aucune cible et ne produit aucune erreur (vérifié sur Prometheus
+    # v3.1.0 : le journal ne contient ni « error » ni « no such file »).
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/demo*.yml"] }]
+    relabel_configs:
+      - { source_labels: [__address__], target_label: __param_target }
+      - { source_labels: [__param_target], target_label: instance }
+      - { target_label: __address__, replacement: "blackbox-exporter:9115" }

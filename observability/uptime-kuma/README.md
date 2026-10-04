@@ -65,15 +65,17 @@ permanence et routée vers le récepteur `veilleuse` d'Alertmanager. Pour la rec
    deux minutes** : le moniteur doit virer au rouge. Tant que cette bascule n'a pas été
    observée une fois, la veilleuse n'est qu'une intention.
 
-### Moniteurs du projet consommateur (SGFE)
+### Moniteurs du projet consommateur
 
-| Nom | Type / URL | Ce qu'il vérifie |
-|---|---|---|
-| SGFE — entrée publique | HTTP(s) `https://<nginx>/healthz` | Le reverse proxy et le frontend répondent |
-| SGFE — passerelle GraphQL | HTTP(s) **POST** `https://<nginx>/graphql`, corps `{"query":"{__typename}"}`, en-tête `Content-Type: application/json`, mot-clé attendu `__typename` | L'API répond **et** rend du GraphQL. Un 200 seul ne prouve rien : une page d'erreur renvoyée en 200 serait comptée saine |
-| SGFE — passerelle WhatsApp | HTTP(s) `https://<hôte>/whatsapp/health`, mot-clé attendu `"ready":true` | La session WhatsApp est **appairée**. Sans le mot-clé, le service répond 200 en `phase: qr` alors que 100 % des envois échouent — exactement l'incident resté invisible deux jours |
+Les moniteurs d'un projet sont fournis par ce projet (son dépôt les décrit) : la plateforme ne
+nomme aucun projet. Deux règles valent pour tous :
 
-La sonde interne équivalente existe aussi (`blackbox-sgfe-graphql` / `blackbox-sgfe-http`,
+| Type | Ce qu'il faut exiger |
+|---|---|
+| Passerelle GraphQL | HTTP(s) **POST**, corps `{"query":"{__typename}"}`, en-tête `Content-Type: application/json`, mot-clé attendu `__typename`. Un 200 seul ne prouve rien : une page d'erreur renvoyée en 200 serait comptée saine |
+| Service à état (session, connexion tierce) | un mot-clé qui prouve l'état **prêt** (par exemple `"ready":true`), pas seulement un 200 : un service peut répondre 200 alors que 100 % de ses envois échouent |
+
+La sonde interne équivalente existe aussi (`blackbox-application-graphql` / `blackbox-application-http`,
 module `http_graphql` de `blackbox.yml`) : elle voit les mêmes surfaces depuis le réseau
 Docker. Les deux sont utiles et ne disent pas la même chose — la sonde interne survit à une
 panne DNS publique, celle d'Uptime Kuma survit à la chute du serveur.

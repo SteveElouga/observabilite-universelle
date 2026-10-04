@@ -9,7 +9,9 @@ vérifie ce que le binaire répond.
 
 from __future__ import annotations
 
+import codecs
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -40,8 +42,8 @@ class ValidationParLesBinairesReels(unittest.TestCase):
             "check", "config", "/etc/prometheus/prometheus.yml",
         ])
         self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
-        # Les fichiers de règles ajoutés pour SGFE doivent être chargés, pas seulement présents.
-        for fichier in ("sgfe.yml", "collecte.yml", "veilleuse.yml", "slo-sgfe.yml"):
+        # Les fichiers de règles du socle doivent être chargés, pas seulement présents.
+        for fichier in ("collecte.yml", "veilleuse.yml"):
             self.assertIn(fichier, resultat.stdout, f"{fichier} n'est pas chargé par Prometheus")
 
     def _verifier_avec_regles_du_consommateur(self, regles: dict[str, str]) -> str:
@@ -86,7 +88,10 @@ class ValidationParLesBinairesReels(unittest.TestCase):
         # Le cas de toute installation qui ne monte rien : l'image livre ce répertoire vide.
         sortie = self._verifier_avec_regles_du_consommateur({})
         self.assertTrue(sortie.startswith("code=0\n"), sortie)
-        self.assertNotIn("consommateur/", sortie)
+        # ⚠ « rules/consommateur/ » et pas « consommateur/ » : les CIBLES du projet vivent aussi dans
+        # un répertoire « targets/consommateur/ », vide dans l'image, et promtool signale à bon droit
+        # un `file_sd` sans fichier. Ce cas juge les RÈGLES ; le motif large confondait les deux.
+        self.assertNotIn("rules/consommateur/", sortie)
 
     def test_loki_accepte_sa_configuration_avec_la_retention_active(self) -> None:
         resultat = executer([
@@ -205,6 +210,86 @@ class TestsUnitairesDesReglesPrometheus(unittest.TestCase):
         ])
         self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
         self.assertIn("SUCCESS", resultat.stdout)
+
+
+# Noms propres aux projets connus : un projet, un service, un script ou un runner qui n'existe
+# que chez lui. Écrits en rot13 pour que le dépôt ne les contienne pas lui-même — sinon la garde
+# se trouverait elle-même. Ajouter ici tout nouveau nom : `codecs.encode("nom", "rot_13")`.
+# S'y ajoutent les clés de ticket d'un projet (préfixe, tiret, numéro) : une référence de
+# suivi est une information de projet. Motif lisible par `git grep -E` comme par busybox.
+NOMS_DE_PROJETS: str = "|".join([
+    *(codecs.decode(nom, "rot_13") for nom in (
+        "ftsr", "sbezhybb", "jungfncc", "nobaar-freivpr", "onpxhc-qngnonfrf", "zvejro",
+    )),
+    "(^|[^a-z0-9])ft-[0-9]+",
+])
+
+
+class NeutraliteDuDepot(unittest.TestCase):
+    """La plateforme est un greffon : AUCUN fichier du dépôt ne nomme un projet (décision du
+    04/10/2026). C'est le projet qui fournit règles, tableaux et cibles (README, « Ce que le
+    projet fournit »). Fichiers suivis ET fichiers nouveaux non ignorés, contenu ET noms."""
+
+    def test_aucun_fichier_du_depot_ne_nomme_un_projet(self) -> None:
+        depot = RACINE.parent
+        contenus = executer([
+            "git", "-C", str(depot), "grep", "-il", "--untracked", "-E", NOMS_DE_PROJETS,
+        ])
+        # git grep rend 1 quand rien ne correspond, 0 quand il trouve : 2 et plus = erreur.
+        self.assertLess(contenus.returncode, 2, contenus.stderr)
+        fichiers = executer([
+            "git", "-C", str(depot), "ls-files", "--cached", "--others", "--exclude-standard",
+        ])
+        self.assertEqual(fichiers.returncode, 0, fichiers.stderr)
+        self.assertGreater(len(fichiers.stdout.splitlines()), 50, "dépôt mal lu : garde à vide")
+        noms = [n for n in fichiers.stdout.splitlines() if re.search(NOMS_DE_PROJETS, n, re.I)]
+        self.assertEqual(
+            (contenus.stdout.split(), noms), ([], []),
+            "des fichiers du dépôt nomment un projet (contenu, puis noms de fichiers)",
+        )
+
+
+@BESOIN_DOCKER
+class NeutraliteDeLImage(unittest.TestCase):
+    """L'image publiée est universelle : elle ne nomme aucun projet consommateur.
+
+    Jusqu'à la 1.1.7, la préprod d'un consommateur affichait un dossier Grafana, des alertes et
+    des jobs Prometheus au nom d'un AUTRE. On ne relit pas les sources, on rejoue la copie :
+    les `COPY` locaux du vrai Dockerfile, sur une base minimale, avec le vrai `.dockerignore` —
+    c'est lui seul qui décide de ce qui entre, et c'est lui qu'il faut prendre en défaut.
+    """
+
+    def test_aucun_fichier_embarque_ne_nomme_un_consommateur(self) -> None:
+        dockerfile = (RACINE / "Dockerfile").read_text(encoding="utf-8")
+        copies = re.findall(r"^COPY\s+(?!--)(\S+)\s+(\S+)\s*$", dockerfile, re.MULTILINE)
+        self.assertGreater(len(copies), 10, "les COPY du Dockerfile n'ont pas été relevés")
+
+        with tempfile.TemporaryDirectory() as dossier:
+            gabarit = Path(dossier) / "Dockerfile"
+            gabarit.write_text(
+                "FROM busybox:1.37\n" + "".join(f"COPY {src} {dst}\n" for src, dst in copies),
+                encoding="utf-8",
+            )
+            construction = executer(["docker", "build", "-q", "-f", str(gabarit), str(RACINE)])
+        self.assertEqual(construction.returncode, 0, construction.stdout + construction.stderr)
+        image = construction.stdout.strip()
+        self.addCleanup(executer, ["docker", "rmi", "-f", image])
+
+        def lancer(commande: str) -> str:
+            resultat = executer(["docker", "run", "--rm", image, "sh", "-c", commande])
+            return resultat.stdout.strip()
+
+        # Garde contre un succès à vide : la configuration doit bien être là.
+        self.assertEqual(lancer("test -f /etc/prometheus/prometheus.yml && echo ok"), "ok")
+        self.assertEqual(
+            lancer(f"grep -rliE '{NOMS_DE_PROJETS}' /etc /usr/local/bin"), "",
+            "des fichiers embarqués nomment un projet consommateur",
+        )
+        self.assertEqual(
+            lancer("grep -rlE 'job_name: *blackbox-demo' /etc; ls /etc/prometheus/targets | grep demo"),
+            "",
+            "la démonstration de ce dépôt est entrée dans l'image",
+        )
 
 
 def load_tests(

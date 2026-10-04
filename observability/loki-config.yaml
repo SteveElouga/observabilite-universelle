@@ -22,7 +22,7 @@ limits_config:
   # (LOG_RETENTION_DAYS=90 côté applicatif) et le minimum d'une période d'observation
   # SOC 2 Type II. Avant le 14/09/2026 cette clé valait 720h SANS bloc `compactor` :
   # elle était donc décorative (voir ci-dessous) et les journaux — qui contiennent des
-  # données personnelles (numéros WhatsApp) — vivaient indéfiniment (RGPD art. 5.1.e).
+  # données personnelles (numéros de téléphone) — vivaient indéfiniment (RGPD art. 5.1.e).
   retention_period: 2160h
 
 # LE BLOC QUI MANQUAIT, et sans lequel `retention_period` ne fait RIEN. Documentation

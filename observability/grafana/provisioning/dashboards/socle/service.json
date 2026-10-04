@@ -558,7 +558,7 @@
         "sortOrder": "Descending",
         "enableLogDetails": true
       },
-      "description": "`{service_name=\"$service\"}` — le label est posé par Alloy à partir du NOM DE SERVICE COMPOSE du conteneur (`discovery.relabel`, alloy-config.alloy), ce qui l'aligne sur l'`OTEL_SERVICE_NAME` porté par les traces et les métriques.\n\nAvant le 14/09/2026, Loki dérivait lui-même `service_name` du nom de CONTENEUR (`sgfe-backend-gateway-1`) : ce panneau — et le bouton « logs de ce span » de Tempo — ne rendaient jamais aucun flux."
+      "description": "`{service_name=\"$service\"}` — le label est posé par Alloy à partir du NOM DE SERVICE COMPOSE du conteneur (`discovery.relabel`, alloy-config.alloy), ce qui l'aligne sur l'`OTEL_SERVICE_NAME` porté par les traces et les métriques.\n\nAvant le 14/09/2026, Loki dérivait lui-même `service_name` du nom de CONTENEUR (`<projet>-backend-gateway-1`) : ce panneau — et le bouton « logs de ce span » de Tempo — ne rendaient jamais aucun flux."
     }
   ]
 }

@@ -22,13 +22,13 @@ tests:
           # canal d'incident toutes les 24 h — le bruit récurrent que C-354 venait justement de
           # nettoyer. Le routage vers le canal de dette technique tient à cette étiquette et à
           # elle seule (alertmanager.yml) : on la fige donc ici, annotation de suivi comprise,
-          # parce que c'est l'échéance de revue qui empêche l'alerte de devenir éternelle.
+          # parce que c'est elle qui dit à l'exploitant quoi trancher.
           - exp_labels:
               severity: dette
             exp_annotations:
               summary: "Aucune sauvegarde ne déclare jamais son succès"
               description: "La série `backup_last_success_timestamp_seconds` n'existe pas : la surveillance des sauvegardes est inopérante, quelle que soit la réalité des sauvegardes. Brancher le collecteur textfile de node-exporter et faire écrire l'horodatage par le travail de sauvegarde. Tant que cette alerte sonne, `SauvegardeAbsente` ne peut pas sonner."
-              suivi: "Lacune d'instrumentation du dépôt observé, constat C-236 du 11/09/2026 (scripts/backup-databases.sh : `|| true` avale l'échec, aucune métrique écrite). Échéance de revue : 15/12/2026. Passé cette date, trancher — instrumenter le travail de sauvegarde, ou retirer les deux règles — plutôt que de laisser cette alerte se répéter indéfiniment."
+              suivi: "Lacune d'instrumentation du projet consommateur : son travail de sauvegarde n'écrit aucune métrique. Trancher — instrumenter ce travail, ou ne pas surveiller les sauvegardes sur cette plateforme — plutôt que de laisser cette alerte se répéter indéfiniment."
               runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sauvegardejamaisdeclaree"
       - eval_time: 7h
         alertname: SauvegardeAbsente

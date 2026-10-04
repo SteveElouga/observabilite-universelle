@@ -37,14 +37,15 @@ route:
     - { matchers: ['severity="ticket"'], receiver: slack,       repeat_interval: 24h }
     # DETTE D'INSTRUMENTATION (ajoutée le 15/09/2026). Deux règles déclarent volontairement un
     # trou de surveillance et sont donc vraies EN PERMANENCE jusqu'à ce que le dépôt observé
-    # les comble : `SauvegardeJamaisDeclaree` et `SGFECronsNonInstrumentes`. Les laisser en
+    # les comble : `SauvegardeJamaisDeclaree` et celle des crons non instrumentés du projet
+    # consommateur (règles qui lui sont propres, hors de l'image). Les laisser en
     # `ticket` les faisait repartir dans #alertes toutes les 24 h — le bruit récurrent que
     # C-354 venait justement de nettoyer, dans le canal qu'on venait de nettoyer.
     #
     # On ne les supprime pas pour autant : une surveillance qui ne peut pas se déclencher
     # rassure à tort. On les sort du canal d'incident, et on les répète une fois par semaine
     # (168 h, multiple du `group_interval` comme la documentation Alertmanager le demande).
-    # Chacune porte une annotation `suivi` avec le constat d'origine et une échéance de revue.
+    # Chacune porte une annotation `suivi` qui dit quoi trancher pour la faire taire.
     - matchers: ['severity="dette"']
       receiver: dette-technique
       group_interval: 6h
