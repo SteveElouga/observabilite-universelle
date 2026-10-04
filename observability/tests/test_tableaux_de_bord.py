@@ -241,6 +241,42 @@ class ContenuMetierDesTableauxDeBord(unittest.TestCase):
         self.assertEqual(deballees, mesures)
 
 
+
+class OperationsGraphQLDuGateway(unittest.TestCase):
+    """Le tableau gateway lit les dimensions GraphQL que le Collector produit RÉELLEMENT.
+
+    Le Collector écrit `graphql.operation.name` ; l'exportateur remote-write en fait
+    `graphql_operation_name`. Une étiquette mal recopiée ne lève aucune erreur : le panneau
+    reste vide, ce qui ressemble à « aucune opération ».
+    """
+
+    def test_latence_et_erreurs_sont_ventilees_par_operation(self) -> None:
+        dimensions = {
+            dimension["name"].replace(".", "_")
+            for dimension in yaml.safe_load(
+                (RACINE / "otel-collector-config.yaml").read_text(encoding="utf-8")
+            )["connectors"]["spanmetrics"]["dimensions"]
+        }
+        self.assertEqual(dimensions, {"graphql_operation_type", "graphql_operation_name"})
+        requetes = [
+            expression
+            for _, uid, expression in _requetes(DASHBOARDS / "socle" / "gateway.json")
+            if uid == "prometheus" and "graphql_operation" in expression
+        ]
+        ventilees = [e for e in requetes if all(d in e for d in dimensions)]
+        self.assertTrue(
+            any("duration_milliseconds_bucket" in e for e in ventilees),
+            "aucune latence ventilée par opération GraphQL",
+        )
+        self.assertTrue(
+            any("STATUS_CODE_ERROR" in e for e in ventilees),
+            "aucun taux d'erreur ventilé par opération GraphQL",
+        )
+        for expression in requetes:
+            for etiquette in re.findall(r"graphql_operation_\w+", expression):
+                with self.subTest(etiquette=etiquette):
+                    self.assertIn(etiquette, dimensions)
+
 @BESOIN_DOCKER
 class SyntaxeDesRequetes(unittest.TestCase):
     """Les expressions sont relues par les moteurs qui les exécuteront."""

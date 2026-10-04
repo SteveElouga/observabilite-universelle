@@ -199,12 +199,167 @@
       }
     },
     {
+      "type": "table",
+      "id": 39,
+      "title": "Latence et erreurs par opération GraphQL",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 8
+      },
+      "description": "Sur la période affichée : P95 (ms), débit (req/s) et part d'erreurs de chaque opération GraphQL, d'après les étiquettes graphql.operation.type et graphql.operation.name posées par le serveur. Le nom vient du client : le Collector range sous « autre » tout nom hors grammaire GraphQL ou de plus de 64 caractères, et, si GRAPHQL_OPERATIONS_CONNUES est posée, tout nom absent de cette liste. Une ligne « autre » qui grossit = un client qui forge des noms, ou une opération à déclarer.",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range])))",
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range]))",
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\", status_code=\"STATUS_CODE_ERROR\"}[$__range])) or (sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range])) * 0)) / sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range]))",
+          "editorMode": "code",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "graphql_operation_type": "Type",
+              "graphql_operation_name": "Opération",
+              "Value #A": "P95",
+              "Value #B": "Débit",
+              "Value #C": "Erreurs"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P95"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Débit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Erreurs"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.01
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.05
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "P95",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
       "type": "row",
       "id": 34,
       "title": "Navigateur (Faro)",
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 17,
         "w": 24,
         "h": 1
       },
@@ -221,7 +376,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 18,
         "w": 12,
         "h": 8
       },
@@ -324,7 +479,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 10,
+        "y": 18,
         "w": 12,
         "h": 8
       },
@@ -374,7 +529,7 @@
       "title": "Erreurs côté navigateur",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 26,
         "w": 24,
         "h": 1
       },
@@ -391,7 +546,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 27,
         "w": 24,
         "h": 9
       },
