@@ -6,7 +6,7 @@
 # Un projet consommateur veut pouvoir tirer une image et déclarer UN service dans son compose ;
 # c'est ce que produit ce fichier. Le dépôt reste la source de vérité : rien n'est recopié ailleurs.
 #
-# CE QU'ELLE CONTIENT — le pipeline de télémétrie, c'est-à-dire ce dont FT-3 a besoin :
+# CE QU'ELLE CONTIENT — le pipeline de télémétrie, c'est-à-dire ce dont un projet consommateur a besoin :
 #   OTel Collector · Prometheus · Loki · Tempo · Pyroscope · Grafana · Alertmanager · Alloy
 #   et Caddy devant, qui termine le TLS (durcissement §7.4).
 #   Depuis les dashboards §8.3 et les alertes §8.4, s'y ajoutent trois exportateurs :
@@ -129,7 +129,7 @@ COPY docker/healthcheck.sh        /usr/local/bin/healthcheck.sh
 #   · Tempo : port gRPC dskit 9095 → 9096 (Loki garde 9095, Pyroscope prend 9097 par drapeau).
 # Le port OTLP du Collector, lui, ne bouge JAMAIS : c'est le contrat des applications.
 # Garde-fou sur la configuration d'Alloy : l'image n'embarque que le rôle Faro (pas de socket
-# Docker, décision de FT-2). Les quatre blocs repris doivent toujours exister en amont, sinon la
+# Docker : l'image ne lit pas les conteneurs de l'hôte). Les quatre blocs repris doivent toujours exister en amont, sinon la
 # dérivation est périmée et la construction doit échouer.
 RUN set -eu; \
     for bloc in 'faro.receiver "web"' 'loki.process "faro"' 'loki.write "default"' 'otelcol.exporter.otlp "collector"'; do \

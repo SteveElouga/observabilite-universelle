@@ -119,9 +119,8 @@ dépôt observé — `SauvegardeJamaisDeclaree` dans le socle, et toute règle d
 même — et sont donc vraies en permanence jusqu'à ce qu'il soit comblé. On ne les supprime pas (une surveillance qui ne peut
 pas se déclencher rassure à tort), mais elles n'ont rien à faire dans le canal d'incident :
 laissées en `ticket`, elles y revenaient toutes les 24 h, c'est-à-dire le bruit récurrent que
-C-354 venait de nettoyer. Chacune porte une annotation `suivi` avec le constat d'origine et une
-**échéance de revue** (15/12/2026) : passé cette date, on tranche — instrumenter, ou retirer la
-règle — plutôt que de laisser une alerte se répéter indéfiniment.
+C-354 venait de nettoyer. Chacune porte une annotation `suivi` qui dit quoi **trancher** —
+instrumenter, ou retirer la règle — plutôt que de laisser une alerte se répéter indéfiniment.
 
 Deux garde-fous complètent le dispositif : la règle **`ChaineAlertingVivante`**
 (`prometheus/rules/veilleuse.yml`) est active en permanence et doit parvenir toutes les
@@ -225,7 +224,7 @@ services:
   observabilite:
     image: nyobeelouga5/observabilite:<version>
     environment:
-      APPLICATION_GRAPHQL_TARGET: http://gateway:8000/graphql
+      APPLICATION_GRAPHQL_TARGET: http://mon-api:8000/graphql
       GRAPHQL_OPERATIONS_CONNUES: "ListerCommandes|CreerCommande"
     volumes:
       - ./observabilite/regles:/etc/prometheus/rules/consommateur:ro
@@ -322,7 +321,7 @@ plateforme peut être irréprochable et ne rien dire de l'application qu'elle ob
 observé apporte donc ses propres règles, SLO et écrans, à côté du socle et sans le modifier
 (voir « Ce que le projet fournit »). Une règle qui **déclare un trou d'instrumentation** au lieu
 de rester silencieuse — comme `SauvegardeJamaisDeclaree` dans le socle — se route en
-`severity: dette`, hors du canal d'incident et une fois par semaine, avec une échéance de revue :
+`severity: dette`, hors du canal d'incident et une fois par semaine, avec une annotation `suivi` :
 visible sans redevenir du bruit (voir « Livraison des alertes »).
 
 ## Tests

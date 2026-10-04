@@ -99,7 +99,7 @@ ecrire_cible keycloak "${KEYCLOAK_METRICS_TARGET:-}" keycloak
 # sur le réseau obs-edge, elle produisait un « ProbeDown » (severity=page) permanent. Elle ne
 # s'écrit donc plus que sur demande.
 if [ -n "${APPLICATION_GRAPHQL_TARGET:-}" ]; then
-  printf '[{"targets":["%s"],"labels":{"role":"application","composant":"gateway"}}]\n' \
+  printf '[{"targets":["%s"],"labels":{"role":"application","composant":"graphql"}}]\n' \
     "$APPLICATION_GRAPHQL_TARGET" > /etc/prometheus/targets/application-graphql.yml
   echo "sonde de l'application (passerelle GraphQL) : $APPLICATION_GRAPHQL_TARGET"
 fi

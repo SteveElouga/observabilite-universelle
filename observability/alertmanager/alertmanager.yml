@@ -45,7 +45,7 @@ route:
     # On ne les supprime pas pour autant : une surveillance qui ne peut pas se déclencher
     # rassure à tort. On les sort du canal d'incident, et on les répète une fois par semaine
     # (168 h, multiple du `group_interval` comme la documentation Alertmanager le demande).
-    # Chacune porte une annotation `suivi` avec le constat d'origine et une échéance de revue.
+    # Chacune porte une annotation `suivi` qui dit quoi trancher pour la faire taire.
     - matchers: ['severity="dette"']
       receiver: dette-technique
       group_interval: 6h

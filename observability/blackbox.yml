@@ -22,7 +22,7 @@ modules:
   #
   # `Host: localhost` est NÉCESSAIRE, pas décoratif : une application Django refuse les
   # requêtes dont l'en-tête Host n'est pas dans ALLOWED_HOSTS (`DisallowedHost`, 400) —
-  # constaté en sondant `http://gateway:8000/graphql` sans lui. Adapter la valeur si le
+  # constaté en sondant `http://mon-api:8000/graphql` sans lui. Adapter la valeur si le
   # consommateur restreint autrement ses hôtes autorisés.
   http_graphql:
     prober: http

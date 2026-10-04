@@ -82,20 +82,21 @@ services:
       - ./prometheus/targets:/out
 
   # Sonde de la passerelle GraphQL du projet consommateur. Même règle que la démo, et pour la
-  # même raison : `gateway` n'est joignable que là où le projet consommateur tourne et partage
-  # le réseau `obs-edge`. Sur un poste qui ne fait tourner que le socle, une cible en dur
-  # produirait une page permanente. Activation : `docker compose --profile application up -d`
+  # même raison : la passerelle n'est joignable que là où le projet consommateur tourne et
+  # partage le réseau `obs-edge`. Sur un poste qui ne fait tourner que le socle, une cible en dur
+  # produirait une page permanente. Pas de défaut : c'est le projet qui donne son adresse.
+  # Activation : `APPLICATION_GRAPHQL_TARGET=… docker compose --profile application up -d`
   # (en mode image, c'est APPLICATION_GRAPHQL_TARGET que lit docker/entrypoint.sh).
   application-targets:
     profiles: ["application"]
     image: busybox:1.37
     restart: "no"
     environment:
-      APPLICATION_GRAPHQL_TARGET: "${APPLICATION_GRAPHQL_TARGET:-http://gateway:8000/graphql}"
+      APPLICATION_GRAPHQL_TARGET: "${APPLICATION_GRAPHQL_TARGET:-}"
     command:
       - sh
       - -c
-      - 'printf ''[{"targets":["%s"],"labels":{"role":"application","composant":"gateway"}}]\n'' "$$APPLICATION_GRAPHQL_TARGET" > /out/application-graphql.local.yml && echo "sonde de l application activée : $$APPLICATION_GRAPHQL_TARGET"'
+      - '[ -n "$$APPLICATION_GRAPHQL_TARGET" ] || { echo "APPLICATION_GRAPHQL_TARGET vide : aucune sonde écrite" >&2; exit 1; }; printf ''[{"targets":["%s"],"labels":{"role":"application","composant":"graphql"}}]\n'' "$$APPLICATION_GRAPHQL_TARGET" > /out/application-graphql.local.yml && echo "sonde de l application activée : $$APPLICATION_GRAPHQL_TARGET"'
     volumes:
       - ./prometheus/targets:/out
 
@@ -266,7 +267,7 @@ services:
     restart: unless-stopped
     volumes: ["./blackbox.yml:/etc/blackbox_exporter/config.yml:ro"]
     # Rejoint obs-edge pour pouvoir sonder les surfaces HTTP du projet consommateur par NOM
-    # (`http://gateway:8000/graphql`). Sans cela, la plateforme ne sondait que ses propres
+    # (`http://mon-api:8000/graphql`). Sans cela, la plateforme ne sondait que ses propres
     # composants et une démo : l'application réelle n'était surveillée par aucune sonde.
     # Vérifié le 14/09/2026 depuis ce réseau : probe_success 1, probe_http_status_code 200.
     networks: [default, obs-edge]

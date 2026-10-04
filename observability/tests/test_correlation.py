@@ -9,7 +9,6 @@ Trois maillons, trois tests de COMPORTEMENT :
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -30,10 +29,21 @@ from outils import (
 )
 
 
-# Projets Compose dont Alloy ingère les journaux pendant le test : la même variable qu'en
-# production (`LOGS_COMPOSE_PROJECTS`). Défaut `.+` : tout projet Compose qui tourne sur le
-# poste. Pour éprouver un périmètre restreint : LOGS_COMPOSE_PROJECTS='monprojet-.*|observability'.
-PROJETS_COMPOSE: str = os.environ.get("LOGS_COMPOSE_PROJECTS") or ".+"
+# Le test apporte ses propres projets Compose au lieu de dépendre de ce qui tourne sur le
+# poste : deux conteneurs jetables étiquetés comme Compose, l'un déclaré dans
+# `LOGS_COMPOSE_PROJECTS`, l'autre non. Un périmètre `.+` ferait du test C-355 une tautologie.
+PROJET_DECLARE: str = "obs-test-declare"
+PROJET_INTRUS: str = "obs-test-intrus"
+IMAGE_LEURRE: str = "busybox:1.37"
+
+
+def _leurre(projet: str) -> ConteneurJetable:
+    """Conteneur nommé comme Compose le ferait (`<projet>-<service>-1`), sans Compose."""
+    return ConteneurJetable(f"{projet}-appli-1", [
+        "--label", f"com.docker.compose.project={projet}",
+        "--label", "com.docker.compose.service=appli",
+        IMAGE_LEURRE, "sleep", "300",
+    ])
 
 
 def _valeur_alloy(noeud: dict[str, Any]) -> Any:
@@ -55,15 +65,19 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
     port: int
     _conteneur: ConteneurJetable
     cibles: list[dict[str, Any]]
+    _leurres: list[ConteneurJetable]
 
     @classmethod
     def setUpClass(cls) -> None:
+        cls._leurres = [_leurre(PROJET_DECLARE), _leurre(PROJET_INTRUS)]
+        for leurre in cls._leurres:
+            leurre.__enter__()
         cls.port = port_libre()
         cls._conteneur = ConteneurJetable("obs-test-alloy-relabel", [
             "-p", f"127.0.0.1:{cls.port}:{cls.port}",
             "-v", f"{RACINE}/alloy-config.alloy:/cfg.alloy:ro",
             "-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
-            "-e", f"LOGS_COMPOSE_PROJECTS={PROJETS_COMPOSE}",
+            "-e", f"LOGS_COMPOSE_PROJECTS={PROJET_DECLARE}",
             "--entrypoint", "/bin/alloy", IMAGE_ALLOY,
             "run", "/cfg.alloy", f"--server.http.listen-addr=0.0.0.0:{cls.port}",
             "--storage.path=/tmp/alloy",
@@ -86,6 +100,8 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls._conteneur.__exit__()
+        for leurre in cls._leurres:
+            leurre.__exit__()
 
     def test_le_label_service_name_vaut_le_nom_de_service_compose(self) -> None:
         """C'est CE label que Grafana interroge depuis un span (`service.name` → `service_name`).
@@ -126,10 +142,7 @@ class EtiquetageDesFluxDeJournaux(unittest.TestCase):
     def test_seuls_les_projets_compose_declares_sont_ingeres(self) -> None:
         """C-355 : 84 conteneurs de l'hôte, dont d'autres projets clients, finissaient dans Loki."""
         projets = {c.get("compose_project") for c in self.cibles}
-        self.assertTrue(projets, "aucun projet découvert")
-        for projet in projets:
-            with self.subTest(projet=projet):
-                self.assertRegex(projet or "", rf"^(?:{PROJETS_COMPOSE})$")
+        self.assertEqual(projets, {PROJET_DECLARE}, "seul le projet déclaré doit être ingéré")
 
     def test_aucun_conteneur_hors_compose_n_est_ingere(self) -> None:
         for cible in self.cibles:

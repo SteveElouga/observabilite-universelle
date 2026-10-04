@@ -209,12 +209,17 @@ class TestsUnitairesDesReglesPrometheus(unittest.TestCase):
         self.assertIn("SUCCESS", resultat.stdout)
 
 
-# Noms propres aux projets connus : un projet, ou un service qui n'existe que chez lui. Écrits en
-# rot13 pour que le dépôt ne les contienne pas lui-même — sinon la garde se trouverait elle-même.
-# Ajouter ici tout nouveau projet qui tire l'image : `codecs.encode("nom", "rot_13")`.
-NOMS_DE_PROJETS: str = "|".join(
-    codecs.decode(nom, "rot_13") for nom in ("ftsr", "sbezhybb", "jungfncc")
-)
+# Noms propres aux projets connus : un projet, un service, un script ou un runner qui n'existe
+# que chez lui. Écrits en rot13 pour que le dépôt ne les contienne pas lui-même — sinon la garde
+# se trouverait elle-même. Ajouter ici tout nouveau nom : `codecs.encode("nom", "rot_13")`.
+# S'y ajoutent les clés de ticket d'un projet (préfixe, tiret, numéro) : une référence de
+# suivi est une information de projet. Motif lisible par `git grep -E` comme par busybox.
+NOMS_DE_PROJETS: str = "|".join([
+    *(codecs.decode(nom, "rot_13") for nom in (
+        "ftsr", "sbezhybb", "jungfncc", "nobaar-freivpr", "onpxhc-qngnonfrf", "zvejro",
+    )),
+    "(^|[^a-z0-9])ft-[0-9]+",
+])
 
 
 class NeutraliteDuDepot(unittest.TestCase):

@@ -44,8 +44,7 @@ discovery.relabel "containers" {
   // voir grafana/provisioning/datasources/datasources.yaml) et ne rendait donc AUCUN flux.
   //
   // Le nom du service Compose est le bon pivot : par convention de ce socle, un composant
-  // nomme son service Compose comme son `OTEL_SERVICE_NAME` (vérifié sur les 9 composants
-  // du projet consommateur : `gateway`, `auth-service`, `abonne-service`, …).
+  // nomme son service Compose comme son `OTEL_SERVICE_NAME`.
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
     target_label  = "service_name"

@@ -264,7 +264,7 @@ flowchart LR
 
 | Option | Catégorie | Prix indicatif 2026 | Pourquoi |
 |---|---|---|---|
-| **Runners auto-hébergés** *(retenu)* | **Le moins cher + le plus sûr** | **Gratuit** (vos machines ; une VM basique ~5–50 €/mois si louée) | Minutes **illimitées**, matériel au choix, caches chauds persistants (vos images MSSQL pré-tirées), le code reste chez vous. C'est votre modèle actuel (`tags: mirweb-vm-shell`). |
+| **Runners auto-hébergés** *(retenu)* | **Le moins cher + le plus sûr** | **Gratuit** (vos machines ; une VM basique ~5–50 €/mois si louée) | Minutes **illimitées**, matériel au choix, caches chauds persistants (vos images MSSQL pré-tirées), le code reste chez vous. C'est votre modèle actuel (`tags: runner-shell`). |
 | Runners SaaS GitLab | Le plus simple | 400 min/mois gratuites puis 0,01 $/min | Zéro maintenance, élastique ; devient coûteux et lent (caches froids) à volume soutenu. |
 | Runners GitHub hébergés | Repère marché | Linux 0,006 $/min ; macOS 0,048 $/min (8×) | Le piège classique : macOS/Windows multiplient la facture. |
 | **Executor Docker / Kubernetes** *(cible)* | Le meilleur techniquement | **Gratuit** | Par rapport à votre executor *shell* : chaque job dans un conteneur propre → isolation totale, environnements reproductibles, plus de bricolage `DOCKER_CONFIG` WSL. L'executor **Kubernetes** sur AKS met les runners à l'échelle automatiquement. |
@@ -1188,7 +1188,7 @@ Les deux fichiers ci-dessous intègrent **toutes** les recommandations applicabl
 
 **Prérequis supposés** (les changements d'infra du §7) :
 
-- Runner en **executor Docker** (`privileged = true`), tag `mirweb-docker` — plus aucun contournement WSL.
+- Runner en **executor Docker** (`privileged = true`), tag `runner-docker` — plus aucun contournement WSL.
 - Un dépôt **`gitops-config`** (§7.5) et un token projet `GITOPS_TOKEN` (scope `write_repository`).
 - Variables CI : `COVERAGE_THRESHOLD`, `GITOPS_REPO_PATH`, `GRAFANA_URL`, `GRAFANA_API_TOKEN`, `SENTRY_URL` (GlitchTip), `SENTRY_AUTH_TOKEN`, `AKS_KUBE_CONTEXT` (agent GitLab).
 - Environnements `production` **protégés** et tags `v*` **protégés** dans GitLab.
@@ -1241,7 +1241,7 @@ promote_release:                       # sur tag : retague l'image DÉJÀ valid�
 # units-service — Pipeline v4 (recommandations du document d'architecture)
 #   lint(+django_checks) --+--> build ----+--> test --> package --> deploy
 #                          +--> security -+   (dev auto / staging auto / prod tag manuel)
-# Runner : executor Docker (tag mirweb-docker)
+# Runner : executor Docker (tag runner-docker)
 # =============================================================================
 
 workflow:
@@ -1259,7 +1259,7 @@ workflow:
 stages: [lint, build, security, test, package, deploy]
 
 default:
-  tags: [mirweb-docker]                                # [#8] executor Docker
+  tags: [runner-docker]                                # [#8] executor Docker
   interruptible: true
 
 variables:
@@ -1630,7 +1630,7 @@ dast_zap_baseline:                                     # [#5] NOUVEAU — hebdo 
 # units-webapp — Pipeline v2 (recommandations du document d'architecture)
 #   lint --+--> build ----+--> test (unit+e2e) --> package --> deploy
 #          +--> security -+                        (review app par MR)
-# Runner : executor Docker (tag mirweb-docker)
+# Runner : executor Docker (tag runner-docker)
 # =============================================================================
 
 workflow:
@@ -1648,7 +1648,7 @@ workflow:
 stages: [lint, build, security, test, package, deploy]
 
 default:
-  tags: [mirweb-docker]
+  tags: [runner-docker]
   interruptible: true
 
 variables:

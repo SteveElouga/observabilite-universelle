@@ -28,7 +28,7 @@ de démonstration, reproduit ailleurs.
 | `RABBITMQ_METRICS_TARGET` | `rabbitmq.yml` | `rabbitmq:15692` (greffon `rabbitmq_prometheus`) |
 | `KEYCLOAK_METRICS_TARGET` | `keycloak.yml` | `keycloak:9000` (port de gestion, métriques activées) |
 | `APPLICATION_PROBE_TARGETS` | `application-http.yml` | `http://nginx/healthz http://passerelle:3000/health` (URLs séparées par des espaces) |
-| `APPLICATION_GRAPHQL_TARGET` | `application-graphql.yml` | `http://gateway:8000/graphql` |
+| `APPLICATION_GRAPHQL_TARGET` | `application-graphql.yml` | `http://mon-api:8000/graphql` |
 
 En **mode image**, c'est `docker/entrypoint.sh` qui écrit ces fichiers au démarrage, à partir des
 variables ci-dessus ; aucune n'est obligatoire. En **mode compose**, il n'y a pas d'entrypoint :

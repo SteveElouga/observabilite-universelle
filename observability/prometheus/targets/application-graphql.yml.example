@@ -5,7 +5,7 @@
 #
 # ACTIVATION (jamais par défaut : une cible injoignable = une page permanente) :
 #   · compose   : docker compose --profile application up -d   (écrit application-graphql.local.yml)
-#   · image     : APPLICATION_GRAPHQL_TARGET=http://gateway:8000/graphql
+#   · image     : APPLICATION_GRAPHQL_TARGET=http://mon-api:8000/graphql
 #   · à la main : cp application-graphql.yml.example application-graphql.local.yml
-- targets: ["http://gateway:8000/graphql"]
-  labels: { role: application, composant: gateway }
+- targets: ["http://mon-api:8000/graphql"]
+  labels: { role: application, composant: graphql }
