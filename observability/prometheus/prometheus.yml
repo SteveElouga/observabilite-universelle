@@ -1,6 +1,11 @@
 # prometheus/prometheus.yml — collecte des métriques (§10.4)
 global: { scrape_interval: 15s, evaluation_interval: 15s }
-rule_files: ["rules/*.yml"]          # red.yml + rules-slo.yml (généré par sloth, voir README)
+# `rules/consommateur/*.yml` : les règles PROPRES à un projet observé, montées par lui en lecture
+# seule (README, « Règles d'un consommateur »). L'image reste universelle : elle n'embarque que le
+# répertoire, vide (un `.gitkeep`, sans lequel le montage échouerait en mode compose : on ne crée
+# pas de point de montage sous un `./prometheus` déjà monté en `:ro`). Un motif sans fichier ne
+# déclare rien et ne lève aucune erreur — prouvé par tests/test_configurations.py.
+rule_files: ["rules/*.yml", "rules/consommateur/*.yml"]   # red.yml + rules-slo.yml (sloth, voir README)
 alerting:
   alertmanagers: [{ static_configs: [{ targets: ["alertmanager:9093"] }] }]
 scrape_configs:

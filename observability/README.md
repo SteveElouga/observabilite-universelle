@@ -37,6 +37,8 @@ observability/
 │       ├── sgfe.yml                   # alertes du CONSOMMATEUR (WhatsApp, crons, composants)
 │       ├── slo-sgfe.yml               # SLO SGFE multi-burn-rate : GÉNÉRÉ par sloth, et
 │       │                              #   VERSIONNÉ — voir « SLO générés » plus bas
+│       ├── consommateur/              # VIDE dans l'image : les règles d'un projet observé,
+│       │                              #   montées par lui (« Règles d'un consommateur »)
 │       └── (rules-slo.yml)            # SLO de la démo : généré par sloth, hors Git
 ├── alertmanager/
 │   ├── alertmanager.yml               # SOCLE de routage — aucune intégration en dur
@@ -131,6 +133,47 @@ Deux garde-fous complètent le dispositif : la règle **`ChaineAlertingVivante`*
 **`NotificationsDAlerteEnEchec`** (`prometheus/rules/collecte.yml`) surveille
 `alertmanager_notifications_failed_total`, que plus personne ne peut ignorer puisque
 Alertmanager est désormais scruté par Prometheus.
+
+## Règles d'un consommateur
+
+L'image est universelle : elle n'embarque **aucune** règle propre à un projet observé. Un
+consommateur qui veut alerter sur ses propres séries (publiées par OTLP ou déposées dans le
+répertoire textfile de node-exporter) monte ses fichiers dans
+**`/etc/prometheus/rules/consommateur/`**, que `prometheus.yml` charge en plus de `rules/*.yml` :
+
+```yaml
+  observabilite:
+    image: nyobeelouga5/observabilite:<version>
+    volumes:
+      - ./observabilite/regles:/etc/prometheus/rules/consommateur:ro   # *.yml seulement
+```
+
+- **Un fichier seul se monte en mode image**, pas en mode compose du socle : là, `./prometheus`
+  est déjà monté en `:ro` et Docker ne peut pas y créer le point de montage d'un fichier
+  (« make mountpoint … read-only file system », constaté). Monter alors un **dossier**, dont le
+  point de montage existe dans le dépôt.
+- **Le répertoire est vide dans l'image**, et un motif sans fichier ne déclare rien : une
+  installation qui ne monte rien démarre comme avant. Un fichier invalide, lui, fait refuser
+  la configuration à Prometheus — on le voit au démarrage, pas à la première panne.
+  `tests/test_configurations.py` prouve les trois cas (chargé, refusé, vide).
+- **Un fichier ajouté ou modifié n'est relu qu'au redémarrage** du conteneur : Prometheus ne
+  surveille pas ses fichiers de règles, et `/-/reload` est fermé (pas de `--web.enable-lifecycle`).
+- **Le contrat d'acheminement est celui des règles du socle**, et rien d'autre n'est routé
+  à dessein. Vérifié par `amtool config routes test` : `severity="warning"` et
+  `severity="critical"` tombent tous deux sur la route par défaut (Slack, rappel toutes les
+  4 h) — un `critical` n'atteint donc **jamais** l'astreinte. Pour être acheminée comme les
+  autres, une règle de consommateur porte :
+
+  | Élément | Valeurs | Pourquoi |
+  |---|---|---|
+  | étiquette `severity` | `page`, `ticket` ou `dette` | seule clé de routage (voir « Quatre gravités, quatre destins ») |
+  | étiquette `service_name` | nom du service | regroupement (`group_by`) et inhibition d'un `ticket` par une `page` du même service ; une valeur gabarit (`"{{ $labels.service }}"`) convient |
+  | annotations `summary`, `description` | texte | seules lues par le gabarit Slack (`render-config.sh`) |
+  | annotation `runbook_url` | URL | rendue en lien « Que faire » ; une annotation `runbook` en texte libre n'est **pas** affichée |
+
+- **Testez vos règles chez vous**, avec `promtool test rules` et la même image
+  (`prom/prometheus:v3.1.0`) : la plateforme ne connaît pas vos séries et ne peut pas le faire
+  à votre place.
 
 ## Conservation par signal
 
