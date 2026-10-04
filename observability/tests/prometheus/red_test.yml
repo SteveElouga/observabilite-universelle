@@ -131,3 +131,82 @@ tests:
       - eval_time: 20m
         alertname: HighLatencyP99
         exp_alerts: []
+
+  # ④ L'appelé est MORT : il n'émet plus rien, et l'appelant répond 200 (erreur dans le corps).
+  #    HighErrorRate se tait — c'est l'angle mort — et HighClientErrorRate sonne, sur l'opération
+  #    en cause seulement : les 1 000 requêtes SQL réussies par minute du même appelant ne noient
+  #    pas les 20 appels perdus, grâce au découpage par span_name.
+  - interval: 1m
+    name: "un appele mort fait sonner son appelant par ses spans client"
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="POST /graphql",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_UNSET"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="inventaire.Stock/Reserver",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_ERROR"}'
+        values: "0+20x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="SELECT base.table",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_UNSET"}'
+        values: "0+1000x30"
+    alert_rule_test:
+      # Condition vraie dès 1m : silence à 5m, sonne à 6m (for: 5m).
+      - eval_time: 5m
+        alertname: HighClientErrorRate
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: HighClientErrorRate
+        exp_alerts: &appel_mort
+          - exp_labels:
+              severity: page
+              service_name: api
+              span_name: inventaire.Stock/Reserver
+            exp_annotations:
+              summary: "api : 100% d'appels sortants « inventaire.Stock/Reserver » en échec"
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#highclienterrorrate"
+      - eval_time: 20m
+        alertname: HighClientErrorRate
+        exp_alerts: *appel_mort
+      - eval_time: 20m
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  # ⑤ Sous le seuil ou sous le plancher, rien ne sonne. 24 % d'échecs à fort débit (bloque une
+  #    baisse du seuil à 0,2, quand ④ bloque une hausse au-delà de 1) ; 100 % d'échecs mais un
+  #    seul appel par minute, 5 échecs en 5 min (bloque la suppression du plancher de 10).
+  - interval: 1m
+    name: "appels sortants sous le seuil ou sous le plancher, rien ne sonne"
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="inventaire.Stock/Reserver",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_ERROR"}'
+        values: "0+24x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="inventaire.Stock/Reserver",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_UNSET"}'
+        values: "0+76x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="GET",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_ERROR"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighClientErrorRate
+        exp_alerts: []
+
+  # ⑥ Des spans SERVEUR tous en erreur ne font pas sonner HighClientErrorRate : c'est le travail
+  #    de HighErrorRate, qui sonne bien ici. Le même span_name « GET » côté serveur (100 % en erreur)
+  #    et côté client (10 %, sous le seuil, plancher atteint) bloque la perte du filtre
+  #    span_kind="SPAN_KIND_CLIENT" au numérateur : sans lui, 110 erreurs pour 100 appels client.
+  - interval: 1m
+    name: "des spans serveur en erreur ne font pas sonner l alerte des appels sortants"
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="GET",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_ERROR"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="GET",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_ERROR"}'
+        values: "0+10x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="GET",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_UNSET"}'
+        values: "0+90x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighClientErrorRate
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service_name: api
+            exp_annotations:
+              summary: "api : 100% de requêtes servies en erreur"
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#higherrorrate"

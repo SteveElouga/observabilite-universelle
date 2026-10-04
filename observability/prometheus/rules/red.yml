@@ -11,12 +11,11 @@
 # correcte, et une requête SQL lente passait pour une requête utilisateur lente. Le symptôme RED,
 # c'est ce que le service REND ; ses appels sortants se lisent au diagnostic (tableau « Par service »).
 #
-# ANGLE MORT assumé (runbooks/README.md#higherrorrate) : un service ARRÊTÉ n'émet plus aucun span,
-# donc ne fait rien sonner ; son appelant ne sonne que s'il rend lui-même une erreur serveur. Un
-# appelant qui traduit l'indisponibilité en réponse « réussie » (erreur GraphQL en HTTP 200, repli)
-# ne sonne pas non plus. Les spans CONSUMER (files de messages) et ceux du navigateur ne comptent
-# plus. Le signal de remplacement (alerte sur les spans CLIENT en erreur, ou sonde de bout en bout
-# qui lit le corps de la réponse) reste à choisir.
+# ANGLE MORT des deux alertes RED : un service ARRÊTÉ n'émet plus aucun span serveur, donc ne fait
+# rien sonner, et un appelant qui traduit l'indisponibilité en réponse « réussie » (erreur GraphQL en
+# HTTP 200, repli) ne sonne pas non plus. Il est couvert par HighClientErrorRate (groupe
+# `service-appels-sortants`) : l'APPELANT, lui, voit ses spans CLIENT échouer. Restent hors champ
+# les spans CONSUMER (files de messages) et ceux du navigateur (runbooks/README.md#higherrorrate).
 groups:
   - name: service-red
     rules:
@@ -40,3 +39,39 @@ groups:
         annotations:
           summary: "{{ $labels.service_name }} : p99 > 500 ms"
           runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#highlatencyp99"
+
+  # Signal de remplacement de l'angle mort ci-dessus : les appels SORTANTS en échec, vus par
+  # l'appelant. Un service mort, injoignable ou qui rend des erreurs fait échouer les spans
+  # CLIENT de ceux qui l'appellent, même quand ces derniers répondent 200 à leur propre client.
+  #
+  # Par (service_name, span_name) : le connecteur spanmetrics n'a ici que ses dimensions par
+  # défaut (service.name, span.name, span.kind, status.code), aucune dimension de pair appelé
+  # (peer.service, rpc.service, server.address). span_name en tient lieu : il nomme la méthode
+  # gRPC (« paquet.Service/Methode ») ou la requête SQL (« SELECT base.table ») ; pour un client
+  # HTTP il ne vaut souvent que la méthode (« GET »). Sans ce découpage, mille requêtes SQL
+  # réussies par minute noieraient les dix appels vers le service mort, comme le faisait
+  # l'ancienne HighErrorRate. Les opérations d'un même appelant arrivent dans UNE notification :
+  # l'Alertmanager groupe par (alertname, service_name).
+  #
+  # Seuil 25 % : une dépendance morte donne ~100 % d'échecs, une dépendance saine quelques
+  # pour cent au pire (délais, reprises) ; un appel sur quatre en échec n'est plus du bruit.
+  # Plancher de 10 échecs en 5 min : sans lui, un appel isolé raté (1 sur 1 = 100 %) sonnerait.
+  # Un appelant à très faible débit (moins de 2 appels par minute) n'est donc pas couvert.
+  # `for: 5m` et `severity: page` comme HighErrorRate : c'est le même incident vu d'un cran plus
+  # haut, et le seul signal quand l'appelé est mort.
+  - name: service-appels-sortants
+    rules:
+      - alert: HighClientErrorRate
+        expr: |
+          (
+            sum by (service_name, span_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_CLIENT", status_code="STATUS_CODE_ERROR"}[5m]))
+            /
+            sum by (service_name, span_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_CLIENT"}[5m])) > 0.25
+          )
+          and
+          sum by (service_name, span_name) (increase(traces_span_metrics_calls_total{span_kind="SPAN_KIND_CLIENT", status_code="STATUS_CODE_ERROR"}[5m])) >= 10
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.service_name }} : {{ $value | humanizePercentage }} d'appels sortants « {{ $labels.span_name }} » en échec"
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#highclienterrorrate"

@@ -18,14 +18,15 @@ du trafic, avant échantillonnage : le chiffre n'est pas une estimation. Les app
 (gRPC, SQL) n'entrent pas dans le calcul : un appel sortant en échec ne fait sonner l'appelant
 que s'il rend lui-même une erreur serveur.
 
-**Angle mort.** Cette alerte ne voit PAS un service arrêté : il n'émet plus aucun span, donc ne fait
-rien sonner. Son appelant ne sonne pas davantage s'il traduit l'indisponibilité en réponse
-« réussie », par exemple une passerelle GraphQL qui rend l'erreur dans le champ `errors` d'une
-réponse HTTP 200, ou un repli silencieux. Les spans CONSUMER (consommateurs de files) et les spans
-du navigateur n'entrent pas non plus dans le calcul. Aucun signal de remplacement n'est encore
-retenu : une alerte sur les spans CLIENT en erreur, ou une sonde de bout en bout qui lit le corps
-de la réponse, sont les deux pistes. En attendant, un service arrêté ne se voit qu'à l'œil : sa
-courbe disparaît du panneau « Débit » de la ligne « RED par service », écran *Vue d'ensemble*.
+**Angle mort, couvert par [HighClientErrorRate](#highclienterrorrate).** Cette alerte ne voit PAS
+un service arrêté : il n'émet plus aucun span, donc ne fait rien sonner. Son appelant ne sonne pas
+davantage s'il traduit l'indisponibilité en réponse « réussie », par exemple une passerelle GraphQL
+qui rend l'erreur dans le champ `errors` d'une réponse HTTP 200, ou un repli silencieux. Ce cas est
+désormais attrapé chez l'APPELANT, par ses spans CLIENT en échec : c'est HighClientErrorRate. Reste
+hors champ : un service arrêté que PERSONNE n'appelle (cron, consommateur de file), et les spans
+CONSUMER et ceux du navigateur, qui n'entrent dans aucune des deux alertes ; ceux-là ne se voient
+qu'à l'œil, quand leur courbe disparaît du panneau « Débit » de la ligne « RED par service », écran
+*Vue d'ensemble*.
 
 **Ce qu'on regarde.** Dashboard *Par service*, sélecteur sur le service en cause → panneau
 « Erreurs par opération » pour savoir si l'erreur est diffuse ou concentrée sur une opération.
@@ -36,6 +37,37 @@ Puis les journaux du même écran, filtrés sur le niveau erreur.
 **Ce qu'on fait.** Une opération unique en cause → dépendance de cette opération (base, courtier,
 service appelé). Erreurs diffuses → le service lui-même, ou son démarrage récent. Cliquer un
 exemplar mène à la trace ; le `trace_id` du journal mène à la même.
+
+## HighClientErrorRate
+
+**Ce que ça veut dire.** Plus de 25 % des appels SORTANTS d'un service (spans client,
+`span_kind="SPAN_KIND_CLIENT"`) pour une même opération échouent depuis cinq minutes, avec au moins
+dix échecs sur la fenêtre. Le service nommé (`service_name`) est l'APPELANT, la victime ; la cause
+est ce qu'il appelle, désigné par `span_name` : méthode gRPC (`paquet.Service/Methode`), requête
+SQL (`SELECT base.table`), ou pour un client HTTP souvent la seule méthode (`GET`). Les
+opérations d'un même appelant arrivent groupées dans une seule notification.
+
+C'est le signal qui couvre l'angle mort de [HighErrorRate](#higherrorrate) : un appelé ARRÊTÉ
+n'émet plus rien, mais son appelant voit ses appels échouer, même s'il répond 200 à son propre
+client. Si HighErrorRate sonne aussi pour le même appelant, l'erreur remonte jusqu'à l'utilisateur ;
+si elle seule sonne, l'appelant masque la panne (repli, erreur dans le corps d'une réponse 200).
+
+**Ce qu'on regarde.** Dashboard *Par service*, sélecteur sur l'appelant → panneau « Erreurs par
+opération » (les cinq opérations qui échouent le plus, appels sortants compris). Puis une trace
+d'échec dans Tempo (*Explore*), en TraceQL :
+`{ resource.service.name = "<appelant>" && kind = client && status = error && name = "<span_name>" }`.
+Le span client en erreur porte l'adresse de l'appelé (`server.address`, `peer.service` ou
+`rpc.service` selon l'instrumentation) et le message d'erreur. Puis, sur l'appelé :
+- sa courbe a disparu du panneau « Débit » de la ligne « RED par service » (*Vue d'ensemble*)
+  → il est arrêté, ou ne reçoit plus rien (réseau, résolution de nom) ;
+- elle est là mais en erreur → HighErrorRate devrait sonner pour lui aussi, sa fiche s'applique ;
+- l'appelé est hors du périmètre observé (API tierce, base) → l'erreur est chez le fournisseur.
+
+**Ce qu'on fait.** Appelé arrêté → le relancer, puis chercher pourquoi il s'est arrêté (journaux de
+son dernier démarrage, mémoire). Délais dépassés sans erreur côté appelé → saturation de l'appelé ou
+du réseau. Dépendance tierce → basculer sur le repli prévu, ou attendre en suivant sa page d'état.
+Un appelant à moins de deux appels par minute vers l'opération n'atteint pas le plancher de dix
+échecs : son silence ne prouve rien.
 
 ## HighLatencyP99
 
