@@ -212,7 +212,7 @@
         "w": 24,
         "h": 8
       },
-      "description": "Sur la période affichée : P95 (ms), débit (req/s) et part d'erreurs de chaque opération GraphQL, d'après les étiquettes graphql.operation.type et graphql.operation.name posées par le serveur. Le nom vient du client : le Collector range sous « autre » tout nom hors grammaire GraphQL ou de plus de 64 caractères, et, si GRAPHQL_OPERATIONS_CONNUES est posée, tout nom absent de cette liste. Une ligne « autre » qui grossit = un client qui forge des noms, ou une opération à déclarer.",
+      "description": "Sur la période affichée : P95 (ms), débit (req/s) et part d'erreurs de chaque opération GraphQL, d'après les étiquettes graphql.operation.type et graphql.operation.name posées par le serveur. Le nom vient du client : le Collector range sous « autre » tout nom absent de la liste blanche GRAPHQL_OPERATIONS_CONNUES, et tous les noms si elle est absente ou vide. Une ligne « autre » qui grossit = une opération à déclarer, ou un client qui forge des noms.",
       "targets": [
         {
           "refId": "A",
@@ -220,7 +220,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (le, graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name=~\"$gateway\", graphql_operation_name!=\"\"}[$__range])))",
           "editorMode": "code",
           "instant": true,
           "range": false,
@@ -232,7 +232,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range]))",
+          "expr": "sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_name!=\"\"}[$__range]))",
           "editorMode": "code",
           "instant": true,
           "range": false,
@@ -244,7 +244,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\", status_code=\"STATUS_CODE_ERROR\"}[$__range])) or (sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range])) * 0)) / sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_type!=\"\"}[$__range]))",
+          "expr": "(sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_name!=\"\", status_code=\"STATUS_CODE_ERROR\"}[$__range])) or (sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_name!=\"\"}[$__range])) * 0)) / sum by (graphql_operation_type, graphql_operation_name) (rate(traces_span_metrics_calls_total{service_name=~\"$gateway\", graphql_operation_name!=\"\"}[$__range]))",
           "editorMode": "code",
           "instant": true,
           "range": false,

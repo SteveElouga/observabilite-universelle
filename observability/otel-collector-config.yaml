@@ -84,28 +84,29 @@ processors:
   # Une API GraphQL reçoit tout sur `POST /graphql` : sans le nom de l'opération, spanmetrics
   # ne calcule qu'UNE latence et UN taux d'erreur pour toute l'API. La convention OpenTelemetry
   # fait donc poser par le serveur `graphql.operation.type`, `graphql.operation.name` et un span
-  # renommé `{type} {nom}`. Or ce NOM VIENT DU CLIENT (`operationName` de la requête) : un
-  # client qui en forge un nouveau à chaque appel crée une série Prometheus par appel, et
-  # chaque série coûte de la mémoire au connecteur (qui ne les oublie jamais en mode cumulatif)
-  # puis à Prometheus.
+  # renommé `{type} {nom}`. Or ce NOM VIENT DU CLIENT (`operationName`, ou le nom écrit dans le
+  # document) : un client qui en forge un nouveau à chaque appel crée une série Prometheus par
+  # appel, et chaque série coûte de la mémoire au connecteur puis à Prometheus.
   #
   # `aggregation_cardinality_limit`, la borne native du connecteur, N'EXISTE PAS en 0.116.1
-  # (`validate` répond « has invalid keys: aggregation_cardinality_limit ») ; et
-  # `dimensions_cache_size` n'est qu'un cache, il ne plafonne pas le nombre de séries. La borne
-  # est donc posée ici, en deux crans :
+  # (`validate` répond « has invalid keys: aggregation_cardinality_limit »). `dimensions_cache_size`
+  # n'est qu'un cache et `metrics_expiration` ne fait qu'oublier les séries restées muettes
+  # (en mode cumulatif, le connecteur les garde sinon jusqu'au redémarrage) : aucun des deux ne
+  # plafonne le NOMBRE de séries. La borne est donc posée ici, par une LISTE BLANCHE :
   #
-  #   · SANS GRAPHQL_OPERATIONS_CONNUES (défaut) : un nom survit s'il respecte la grammaire
-  #     GraphQL (`[_A-Za-z][_0-9A-Za-z]*`) et fait au plus 64 caractères. Le tableau ventile
-  #     donc par opération sans rien déclarer ; un nom malformé ou démesuré devient `autre`.
-  #     C'est une borne de FORME, pas de NOMBRE : un client authentifié qui forge un nom valide
-  #     par appel ouvre encore une série par appel.
-  #   · AVEC la variable (expression RE2, par exemple `ListerCommandes|CreerCommande`, ancrée
-  #     ici) : liste blanche stricte, tout autre nom devient `autre`. C'est la borne de NOMBRE,
-  #     à poser dès que le consommateur connaît ses opérations.
+  #   · GRAPHQL_OPERATIONS_CONNUES : expression RE2, par exemple `ListerCommandes|CreerCommande`,
+  #     ancrée ci-dessous par `^(?:…)$`. Seuls ces noms deviennent des séries ; tout autre
+  #     devient `autre`.
+  #   · ABSENTE OU VIDE (défaut) : TOUT nom devient `autre`. Le tableau ne ventile alors que par
+  #     type (query, mutation, subscription) : c'est voulu, une plateforme ne doit pas ouvrir une
+  #     série par nom forgé chez un consommateur qui n'a rien déclaré. Attention au relais de
+  #     compose `${GRAPHQL_OPERATIONS_CONNUES:-}` : une valeur vide vaut une absence.
   #
   # `autre` s'écrit sur l'attribut ET sur le nom du span, `span.name` étant une dimension
   # native du connecteur. Le type vient du serveur, mais on le borne aussi aux trois valeurs de
-  # la spécification GraphQL : un émetteur fautif ne doit pas rouvrir la porte.
+  # la spécification GraphQL : un émetteur fautif ne doit pas rouvrir la porte. `IsMatch`
+  # convertit en texte une valeur qui n'est pas une chaîne : un attribut entier ou booléen est
+  # donc jugé comme les autres et ne peut pas passer à travers une instruction en erreur.
   #
   # Ce processeur n'est branché QUE sur le pipeline des métriques dérivées : les traces
   # stockées dans Tempo gardent le nom réel, c'est lui qu'on cherche en enquête.
@@ -115,7 +116,7 @@ processors:
       - context: span
         statements:
           - set(attributes["graphql.operation.type"], "autre") where attributes["graphql.operation.type"] != nil and not IsMatch(attributes["graphql.operation.type"], "^(query|mutation|subscription)$$")
-          - set(attributes["graphql.operation.name"], "autre") where attributes["graphql.operation.name"] != nil and (Len(attributes["graphql.operation.name"]) > 64 or not IsMatch(attributes["graphql.operation.name"], "^(?:${env:GRAPHQL_OPERATIONS_CONNUES:-[_A-Za-z][_0-9A-Za-z]*})$$"))
+          - set(attributes["graphql.operation.name"], "autre") where attributes["graphql.operation.name"] != nil and not IsMatch(attributes["graphql.operation.name"], "^(?:${env:GRAPHQL_OPERATIONS_CONNUES:-})$$")
           - set(name, Concat([attributes["graphql.operation.type"], "autre"], " ")) where attributes["graphql.operation.name"] == "autre" and attributes["graphql.operation.type"] != nil
           - set(name, "autre") where attributes["graphql.operation.name"] == "autre" and attributes["graphql.operation.type"] == nil
 

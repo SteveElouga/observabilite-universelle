@@ -241,7 +241,6 @@ class ContenuMetierDesTableauxDeBord(unittest.TestCase):
         self.assertEqual(deballees, mesures)
 
 
-
 class OperationsGraphQLDuGateway(unittest.TestCase):
     """Le tableau gateway lit les dimensions GraphQL que le Collector produit RÉELLEMENT.
 
@@ -276,6 +275,7 @@ class OperationsGraphQLDuGateway(unittest.TestCase):
             for etiquette in re.findall(r"graphql_operation_\w+", expression):
                 with self.subTest(etiquette=etiquette):
                     self.assertIn(etiquette, dimensions)
+
 
 @BESOIN_DOCKER
 class SyntaxeDesRequetes(unittest.TestCase):

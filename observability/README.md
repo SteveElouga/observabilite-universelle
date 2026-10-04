@@ -194,11 +194,12 @@ Contrôle : `curl :3100/config | grep -A3 compactor`, ou la suite `tests/`.
 
 Une API GraphQL reçoit tout sur `POST /graphql`. Le serveur qui suit la convention OpenTelemetry pose `graphql.operation.type` et `graphql.operation.name` sur son span et le renomme `{type} {nom}` ; `spanmetrics` en fait deux dimensions, et le tableau « Gateway et expérience utilisateur » ventile latence, débit et erreurs par opération. Mais le nom vient du **client** : un nom forgé à chaque appel ouvrirait une série par appel. La version 0.116.1 du Collector n'a pas `aggregation_cardinality_limit` ; c'est donc `transform/operations_bornees` qui borne, sur le seul pipeline des métriques (Tempo garde le nom réel).
 
-| Variable | Avec elle | Sans elle (défaut) |
-|---|---|---|
-| `GRAPHQL_OPERATIONS_CONNUES` | Liste blanche, expression RE2 ancrée par le Collector (`ListerCommandes\|CreerCommande`) : tout autre nom devient `autre`. Borne le **nombre** de séries. | Un nom survit s'il respecte la grammaire GraphQL et fait au plus 64 caractères ; sinon `autre`. Le tableau ventile sans rien déclarer, mais la borne n'est que de **forme** : un client qui forge un nom valide par appel ouvre encore une série par appel. |
+| `GRAPHQL_OPERATIONS_CONNUES` | Effet |
+|---|---|
+| Posée, par exemple `ListerCommandes\|CreerCommande` | Liste blanche : une expression RE2 que la configuration ancre par `^(?:…)$`. Seuls ces noms deviennent des séries, tout autre devient `autre`. |
+| Absente **ou vide** (défaut) | Tout nom devient `autre` : le tableau ne ventile que par type (`query autre`, `mutation autre`). Une valeur vide, celle que relaie `${GRAPHQL_OPERATIONS_CONNUES:-}`, vaut une absence. |
 
-Une ligne `autre` qui grossit dans le tableau signale un client qui forge des noms ou, avec la liste blanche, une opération à déclarer.
+Pour voir ses opérations, un consommateur déclare donc les noms qu'il émet. Une ligne `autre` qui grossit dans le tableau signale une opération à déclarer ou un client qui forge des noms.
 
 ## Mémoire et redémarrage : deux moitiés d'une même protection
 

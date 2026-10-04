@@ -369,6 +369,27 @@ def _bornes_des_seaux_en_ms() -> list[float]:
     return bornes
 
 
+def _paliers_des_panneaux_de_latence(noeud: object) -> list[str]:
+    """Les paliers `fieldConfig.defaults.thresholds` des panneaux en ms qui lisent l'histogramme."""
+    if isinstance(noeud, list):
+        return [palier for enfant in noeud for palier in _paliers_des_panneaux_de_latence(enfant)]
+    if not isinstance(noeud, dict):
+        return []
+    paliers = []
+    defauts = (noeud.get("fieldConfig") or {}).get("defaults") or {}
+    lit_l_histogramme = any(
+        "duration_milliseconds_bucket" in (cible.get("expr") or "")
+        for cible in noeud.get("targets") or []
+    )
+    if lit_l_histogramme and defauts.get("unit") == "ms":
+        paliers = [
+            str(palier["value"])
+            for palier in (defauts.get("thresholds") or {}).get("steps") or []
+            if palier.get("value") is not None
+        ]
+    return paliers + _paliers_des_panneaux_de_latence(list(noeud.values()))
+
+
 class LesSeuilsDeLatenceTombentSurUneBorne(unittest.TestCase):
     """Un seuil entre deux bornes compare une valeur INTERPOLÉE, pas une mesure.
 
@@ -386,14 +407,22 @@ class LesSeuilsDeLatenceTombentSurUneBorne(unittest.TestCase):
             texte = fichier.read_text(encoding="utf-8")
             if "duration_milliseconds_bucket" not in texte:
                 continue
+            nom = str(fichier.relative_to(RACINE))
+            # Un `le=~"…"` choisit ses bornes par motif : ce test ne saurait pas les relire.
+            self.assertIsNone(re.search(r"le\s*=~", texte), f"{nom} : `le` par motif")
             seuils = re.findall(r'le=\\?"([0-9.]+)\\?"', texte)
-            # Le seuil d'un `histogram_quantile(...) > N` : la comparaison qui clôt l'expression.
+            # Le seuil d'un `histogram_quantile(...) > N` (ou `>=`, `> bool`) : la comparaison
+            # qui clôt l'expression.
             seuils += re.findall(
-                r"duration_milliseconds_bucket[^>]*?\)\)\)\s*>\s*([0-9.]+)", texte
+                r"duration_milliseconds_bucket[^>]*?\)\)\)\s*>=?\s*(?:bool\s+)?([0-9.]+)",
+                texte,
             )
+            # Les paliers de couleur d'un panneau de latence (unité ms) sont des seuils aussi.
+            if fichier.suffix == ".json":
+                seuils += _paliers_des_panneaux_de_latence(json.loads(texte))
             for seuil in seuils:
                 lus += 1
-                with self.subTest(fichier=str(fichier.relative_to(RACINE)), seuil=seuil):
+                with self.subTest(fichier=nom, seuil=seuil):
                     self.assertIn(float(seuil), bornes)
         # Contrôle de l'outil : sans cela, un motif devenu aveugle rendrait le test vert à vide.
         self.assertGreaterEqual(lus, 4, "aucun seuil de latence relu : le motif est aveugle")
@@ -407,7 +436,7 @@ class _CollecteurDesOperations:
     """
 
     ENVIRONNEMENT: tuple[str, ...] = ()
-    SPANS: tuple[tuple[str, dict[str, str]], ...] = ()
+    SPANS: tuple[tuple[str, dict[str, str | int]], ...] = ()
 
     points: list[dict[str, str]]
     bornes: list[float]
@@ -474,7 +503,8 @@ class _CollecteurDesOperations:
                 "startTimeUnixNano": "1000000000",
                 "endTimeUnixNano": "1030000000",  # 30 ms
                 "attributes": [
-                    {"key": cle, "value": {"stringValue": valeur}}
+                    {"key": cle, "value": {"intValue": str(valeur)} if isinstance(valeur, int)
+                     else {"stringValue": valeur}}
                     for cle, valeur in attributs.items()
                 ],
             }
@@ -538,39 +568,33 @@ class _CollecteurDesOperations:
 
 @BESOIN_DOCKER
 class OperationsGraphQLSansListeBlanche(_CollecteurDesOperations, unittest.TestCase):
-    """Le DÉFAUT, sans GRAPHQL_OPERATIONS_CONNUES : utile tout de suite, borné en forme.
+    """Le DÉFAUT, sans GRAPHQL_OPERATIONS_CONNUES : aucun nom ne devient une série.
 
-    Le tableau doit ventiler par opération sans que le consommateur ait rien déclaré ; un nom
-    hors grammaire GraphQL ou démesuré se replie sur `autre`.
+    Le nom vient du client ; une plateforme qui ne connaît pas les opérations du consommateur
+    ne doit pas ouvrir une série par nom forgé. Seul le type, borné, reste ventilé.
     """
 
-    TROP_LONG = "A" * 65
     SPANS = (
         ("query ListerCommandes",
          {"graphql.operation.type": "query", "graphql.operation.name": "ListerCommandes"}),
         ("mutation CreerCommande",
          {"graphql.operation.type": "mutation", "graphql.operation.name": "CreerCommande"}),
-        ("query Forge-7f3a",
-         {"graphql.operation.type": "query", "graphql.operation.name": "Forge-7f3a"}),
-        (f"query {TROP_LONG}",
-         {"graphql.operation.type": "query", "graphql.operation.name": TROP_LONG}),
+        ("query Forge7f3a",
+         {"graphql.operation.type": "query", "graphql.operation.name": "Forge7f3a"}),
         ("GET /sante", {}),
     )
-    REPLIS_PARTAGES = 1  # Forge-7f3a et le nom trop long tombent dans la même série
+    REPLIS_PARTAGES = 1  # ListerCommandes et Forge7f3a tombent dans « query autre »
 
-    def test_les_noms_valides_sont_ventiles_sans_rien_declarer(self) -> None:
-        self.assertLessEqual({"query ListerCommandes", "mutation CreerCommande"},
-                             self._noms_de_span())
-        self.assertLessEqual({"ListerCommandes", "CreerCommande"}, self._noms_d_operation())
+    def test_aucun_nom_d_operation_ne_devient_une_serie(self) -> None:
+        self.assertEqual(self._noms_d_operation() - {None}, {"autre"})
+        self.assertEqual(self._noms_de_span(), {"query autre", "mutation autre", "GET /sante"})
 
-    def test_un_nom_hors_grammaire_se_replie_sur_autre(self) -> None:
-        self.assertNotIn("query Forge-7f3a", self._noms_de_span())
-        self.assertNotIn("Forge-7f3a", self._noms_d_operation())
-        self.assertIn("query autre", self._noms_de_span())
 
-    def test_un_nom_de_plus_de_64_caracteres_se_replie_sur_autre(self) -> None:
-        self.assertNotIn(self.TROP_LONG, self._noms_d_operation())
-        self.assertNotIn(f"query {self.TROP_LONG}", self._noms_de_span())
+@BESOIN_DOCKER
+class OperationsGraphQLListeBlancheVide(OperationsGraphQLSansListeBlanche):
+    """Une variable posée VIDE, celle d'un relais `${GRAPHQL_OPERATIONS_CONNUES:-}`, vaut une absence."""
+
+    ENVIRONNEMENT = ("-e", "GRAPHQL_OPERATIONS_CONNUES=")
 
 
 @BESOIN_DOCKER
@@ -593,8 +617,12 @@ class OperationsGraphQLAvecListeBlanche(_CollecteurDesOperations, unittest.TestC
         ("bizarre", {"graphql.operation.type": "bizarre"}),
         # Un nom sans type : le repli ne doit pas fabriquer un nom de span vide ou forgé.
         ("SansType", {"graphql.operation.name": "SansType"}),
+        # Une valeur qui n'est pas une chaîne ne doit pas faire échouer l'instruction, ce qui
+        # la laisserait passer sans borne (`error_mode: ignore`).
+        ("query 1234", {"graphql.operation.type": "query", "graphql.operation.name": 1234}),
         ("GET /sante", {}),
     )
+    REPLIS_PARTAGES = 1  # Forge7f3a et 1234 tombent dans « query autre »
 
     def test_une_operation_connue_garde_son_nom(self) -> None:
         self.assertIn(
@@ -609,6 +637,10 @@ class OperationsGraphQLAvecListeBlanche(_CollecteurDesOperations, unittest.TestC
         self.assertNotIn("query Forge7f3a", self._noms_de_span())
         self.assertIn("query autre", self._noms_de_span())
         self.assertNotIn("Forge7f3a", self._noms_d_operation())
+
+    def test_un_nom_qui_n_est_pas_une_chaine_se_replie_aussi(self) -> None:
+        self.assertNotIn("1234", self._noms_d_operation())
+        self.assertNotIn("query 1234", self._noms_de_span())
 
     def test_la_liste_blanche_est_ancree(self) -> None:
         self.assertNotIn("mutation CreerCommandeX", self._noms_de_span())
