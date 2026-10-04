@@ -79,6 +79,47 @@ processors:
       - { name: slow,    type: latency,      latency: { threshold_ms: 500 } }
       - { name: baseline, type: probabilistic, probabilistic: { sampling_percentage: 10 } }
 
+  # Cardinalité des opérations GraphQL BORNÉE avant le connecteur `spanmetrics`.
+  #
+  # Une API GraphQL reçoit tout sur `POST /graphql` : sans le nom de l'opération, spanmetrics
+  # ne calcule qu'UNE latence et UN taux d'erreur pour toute l'API. La convention OpenTelemetry
+  # fait donc poser par le serveur `graphql.operation.type`, `graphql.operation.name` et un span
+  # renommé `{type} {nom}`. Or ce NOM VIENT DU CLIENT (`operationName`, ou le nom écrit dans le
+  # document) : un client qui en forge un nouveau à chaque appel crée une série Prometheus par
+  # appel, et chaque série coûte de la mémoire au connecteur puis à Prometheus.
+  #
+  # `aggregation_cardinality_limit`, la borne native du connecteur, N'EXISTE PAS en 0.116.1
+  # (`validate` répond « has invalid keys: aggregation_cardinality_limit »). `dimensions_cache_size`
+  # n'est qu'un cache et `metrics_expiration` ne fait qu'oublier les séries restées muettes
+  # (en mode cumulatif, le connecteur les garde sinon jusqu'au redémarrage) : aucun des deux ne
+  # plafonne le NOMBRE de séries. La borne est donc posée ici, par une LISTE BLANCHE :
+  #
+  #   · GRAPHQL_OPERATIONS_CONNUES : expression RE2, par exemple `ListerCommandes|CreerCommande`,
+  #     ancrée ci-dessous par `^(?:…)$`. Seuls ces noms deviennent des séries ; tout autre
+  #     devient `autre`.
+  #   · ABSENTE OU VIDE (défaut) : TOUT nom devient `autre`. Le tableau ne ventile alors que par
+  #     type (query, mutation, subscription) : c'est voulu, une plateforme ne doit pas ouvrir une
+  #     série par nom forgé chez un consommateur qui n'a rien déclaré. Attention au relais de
+  #     compose `${GRAPHQL_OPERATIONS_CONNUES:-}` : une valeur vide vaut une absence.
+  #
+  # `autre` s'écrit sur l'attribut ET sur le nom du span, `span.name` étant une dimension
+  # native du connecteur. Le type vient du serveur, mais on le borne aussi aux trois valeurs de
+  # la spécification GraphQL : un émetteur fautif ne doit pas rouvrir la porte. `IsMatch`
+  # convertit en texte une valeur qui n'est pas une chaîne : un attribut entier ou booléen est
+  # donc jugé comme les autres et ne peut pas passer à travers une instruction en erreur.
+  #
+  # Ce processeur n'est branché QUE sur le pipeline des métriques dérivées : les traces
+  # stockées dans Tempo gardent le nom réel, c'est lui qu'on cherche en enquête.
+  transform/operations_bornees:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - set(attributes["graphql.operation.type"], "autre") where attributes["graphql.operation.type"] != nil and not IsMatch(attributes["graphql.operation.type"], "^(query|mutation|subscription)$$")
+          - set(attributes["graphql.operation.name"], "autre") where attributes["graphql.operation.name"] != nil and not IsMatch(attributes["graphql.operation.name"], "^(?:${env:GRAPHQL_OPERATIONS_CONNUES:-})$$")
+          - set(name, Concat([attributes["graphql.operation.type"], "autre"], " ")) where attributes["graphql.operation.name"] == "autre" and attributes["graphql.operation.type"] != nil
+          - set(name, "autre") where attributes["graphql.operation.name"] == "autre" and attributes["graphql.operation.type"] == nil
+
   # Lots bornés : sans `send_batch_max_size`, un pic de trafic produit un lot unique
   # énorme que l'exportateur remote-write n'arrive pas à pousser dans son délai → le lot
   # entier est jeté (voir l'exportateur ci-dessous). 8192 points est la taille conseillée
@@ -95,8 +136,25 @@ connectors:
   # l'intervalle de collecte, vaut 60 s : UN SEUL échantillon dans la fenêtre, donc `rate()` ne
   # rend RIEN. Tous les panneaux RED affichaient « No data » pendant que ceux de node-exporter
   # traçaient normalement. Mesuré : 60 s d'écart côté spanmetrics, 15 s côté node.
+  #
+  # Seaux réglés pour une API web, de 5 ms à 10 s. Les défauts du connecteur (2, 4, 6, 8, 10,
+  # 50, 100, 200, 400, 800, 1000, 1400, 2000, 5000, 10000, 15000 ms) gaspillaient quatre seaux
+  # sous 10 ms et n'avaient AUCUNE borne à 500 ms : HighLatencyP99 et BudgetLatenceEcriture-
+  # Depasse (seuil 500 ms) comparaient une valeur interpolée entre 400 et 800. Tout seuil
+  # d'alerte ou de SLO doit tomber SUR une borne : 500 (red.yml, budgets.yml) et 2000
+  # (budgets.yml, `le="2000"` des SLO de latence). tests/test_retention_et_collecte.py le
+  # vérifie sur chaque fichier qui lit l'histogramme.
+  #
+  # Dimensions GraphQL : bornées par `transform/operations_bornees` (voir plus haut). Absentes
+  # d'un span (tout ce qui n'est pas une opération GraphQL), elles n'ajoutent aucune étiquette.
   spanmetrics:
     metrics_flush_interval: 15s
+    histogram:
+      explicit:
+        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2s, 5s, 10s]
+    dimensions:
+      - name: graphql.operation.type
+      - name: graphql.operation.name
   servicegraph: {}     # nourrit la carte des services de Grafana (écran 0)
 
 exporters:
@@ -142,7 +200,7 @@ service:
   pipelines:
     traces/derive:                                   # ① 100 % des spans → métriques dérivées (PAS d'échantillonnage ici)
       receivers:  [otlp]
-      processors: [memory_limiter, resource, filter/drop_noise, attributes/redact]
+      processors: [memory_limiter, resource, filter/drop_noise, attributes/redact, transform/operations_bornees]
       exporters:  [spanmetrics, servicegraph]
     traces/store:                                    # ② échantillonnage tail-based, PUIS stockage dans Tempo
       receivers:  [otlp]

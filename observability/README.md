@@ -190,6 +190,17 @@ avec `retention_enabled: true` et `delete_request_store`, « the logs sent to Lo
 forever » (documentation Loki). La rétention exige en outre une période d'index de 24 h.
 Contrôle : `curl :3100/config | grep -A3 compactor`, ou la suite `tests/`.
 
+## Opérations GraphQL : une dimension bornée
+
+Une API GraphQL reçoit tout sur `POST /graphql`. Le serveur qui suit la convention OpenTelemetry pose `graphql.operation.type` et `graphql.operation.name` sur son span et le renomme `{type} {nom}` ; `spanmetrics` en fait deux dimensions, et le tableau « Gateway et expérience utilisateur » ventile latence, débit et erreurs par opération. Mais le nom vient du **client** : un nom forgé à chaque appel ouvrirait une série par appel. La version 0.116.1 du Collector n'a pas `aggregation_cardinality_limit` ; c'est donc `transform/operations_bornees` qui borne, sur le seul pipeline des métriques (Tempo garde le nom réel).
+
+| `GRAPHQL_OPERATIONS_CONNUES` | Effet |
+|---|---|
+| Posée, par exemple `ListerCommandes\|CreerCommande` | Liste blanche : une expression RE2 que la configuration ancre par `^(?:…)$`. Seuls ces noms deviennent des séries, tout autre devient `autre`. |
+| Absente **ou vide** (défaut) | Tout nom devient `autre` : le tableau ne ventile que par type (`query autre`, `mutation autre`). Une valeur vide, celle que relaie `${GRAPHQL_OPERATIONS_CONNUES:-}`, vaut une absence. |
+
+Pour voir ses opérations, un consommateur déclare donc les noms qu'il émet. Une ligne `autre` qui grossit dans le tableau signale une opération à déclarer ou un client qui forge des noms.
+
 ## Mémoire et redémarrage : deux moitiés d'une même protection
 
 Le 12/09/2026, **Loki, Tempo et Pyroscope sont sortis en code 137 (OOMKilled) et sont restés

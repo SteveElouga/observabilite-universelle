@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -353,6 +354,321 @@ class EnvironnementDeDeploiementObserve(unittest.TestCase):
         self.assertEqual(attributs["deployment.environment.name"], "prod")
         self.assertEqual(attributs["deployment.environment"], "prod")
 
+
+def _bornes_des_seaux_en_ms() -> list[float]:
+    """Les seaux du connecteur `spanmetrics` de production, convertis en millisecondes."""
+    seaux = yaml.safe_load(
+        (RACINE / "otel-collector-config.yaml").read_text(encoding="utf-8")
+    )["connectors"]["spanmetrics"]["histogram"]["explicit"]["buckets"]
+    facteurs = {"ms": 1.0, "s": 1000.0}
+    bornes = []
+    for seau in seaux:
+        correspondance = re.fullmatch(r"([0-9.]+)(ms|s)", seau)
+        assert correspondance, f"unité de seau inattendue : {seau}"
+        bornes.append(float(correspondance.group(1)) * facteurs[correspondance.group(2)])
+    return bornes
+
+
+def _paliers_des_panneaux_de_latence(noeud: object) -> list[str]:
+    """Les paliers `fieldConfig.defaults.thresholds` des panneaux en ms qui lisent l'histogramme."""
+    if isinstance(noeud, list):
+        return [palier for enfant in noeud for palier in _paliers_des_panneaux_de_latence(enfant)]
+    if not isinstance(noeud, dict):
+        return []
+    paliers = []
+    defauts = (noeud.get("fieldConfig") or {}).get("defaults") or {}
+    lit_l_histogramme = any(
+        "duration_milliseconds_bucket" in (cible.get("expr") or "")
+        for cible in noeud.get("targets") or []
+    )
+    if lit_l_histogramme and defauts.get("unit") == "ms":
+        paliers = [
+            str(palier["value"])
+            for palier in (defauts.get("thresholds") or {}).get("steps") or []
+            if palier.get("value") is not None
+        ]
+    return paliers + _paliers_des_panneaux_de_latence(list(noeud.values()))
+
+
+class LesSeuilsDeLatenceTombentSurUneBorne(unittest.TestCase):
+    """Un seuil entre deux bornes compare une valeur INTERPOLÉE, pas une mesure.
+
+    Avec les seaux par défaut du connecteur, 500 ms n'était pas une borne : HighLatencyP99
+    et BudgetLatenceEcritureDepasse jugeaient une interpolation linéaire entre 400 et 800.
+    On relit chaque fichier versionné qui interroge l'histogramme, où qu'il soit rangé.
+    """
+
+    def test_chaque_seuil_et_chaque_le_est_une_borne(self) -> None:
+        bornes = set(_bornes_des_seaux_en_ms())
+        lus = 0
+        for fichier in sorted(RACINE.rglob("*")):
+            if fichier.suffix not in {".yml", ".yaml", ".json"} or "tests" in fichier.parts:
+                continue
+            texte = fichier.read_text(encoding="utf-8")
+            if "duration_milliseconds_bucket" not in texte:
+                continue
+            nom = str(fichier.relative_to(RACINE))
+            # Un `le=~"…"` choisit ses bornes par motif : ce test ne saurait pas les relire.
+            self.assertIsNone(re.search(r"le\s*=~", texte), f"{nom} : `le` par motif")
+            seuils = re.findall(r'le=\\?"([0-9.]+)\\?"', texte)
+            # Le seuil d'un `histogram_quantile(...) > N` (ou `>=`, `> bool`) : la comparaison
+            # qui clôt l'expression.
+            seuils += re.findall(
+                r"duration_milliseconds_bucket[^>]*?\)\)\)\s*>=?\s*(?:bool\s+)?([0-9.]+)",
+                texte,
+            )
+            # Les paliers de couleur d'un panneau de latence (unité ms) sont des seuils aussi.
+            if fichier.suffix == ".json":
+                seuils += _paliers_des_panneaux_de_latence(json.loads(texte))
+            for seuil in seuils:
+                lus += 1
+                with self.subTest(fichier=nom, seuil=seuil):
+                    self.assertIn(float(seuil), bornes)
+        # Contrôle de l'outil : sans cela, un motif devenu aveugle rendrait le test vert à vide.
+        self.assertGreaterEqual(lus, 4, "aucun seuil de latence relu : le motif est aveugle")
+
+
+class _CollecteurDesOperations:
+    """Fait traverser de vrais spans au processeur et au connecteur de PRODUCTION.
+
+    Les points de métrique qui sortent sont relus dans un exportateur fichier. Chaque sous-classe
+    choisit l'environnement du Collector et les spans envoyés.
+    """
+
+    ENVIRONNEMENT: tuple[str, ...] = ()
+    SPANS: tuple[tuple[str, dict[str, str | int]], ...] = ()
+
+    points: list[dict[str, str]]
+    bornes: list[float]
+    _dossier: Path
+    _conteneur: ConteneurJetable
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        dossier = Path(tempfile.mkdtemp(prefix="obs-test-spanmetrics-"))
+        dossier.chmod(0o777)  # le Collector écrit sous l'utilisateur 10001
+        cls._dossier = dossier
+
+        production = yaml.safe_load(
+            (RACINE / "otel-collector-config.yaml").read_text(encoding="utf-8")
+        )
+        configuration = {
+            "receivers": {"otlp": {"protocols": {"http": {"endpoint": "0.0.0.0:4318"}}}},
+            "processors": {
+                "transform/operations_bornees":
+                    production["processors"]["transform/operations_bornees"],
+            },
+            "connectors": {"spanmetrics": production["connectors"]["spanmetrics"]},
+            "exporters": {"file": {"path": "/sortie/metriques.json"}},
+            "service": {
+                "telemetry": {"metrics": {"level": "none"}},
+                "pipelines": {
+                    "traces": {
+                        "receivers": ["otlp"],
+                        "processors": ["transform/operations_bornees"],
+                        "exporters": ["spanmetrics"],
+                    },
+                    "metrics": {"receivers": ["spanmetrics"], "exporters": ["file"]},
+                },
+            },
+        }
+        (dossier / "config.yaml").write_text(
+            yaml.safe_dump(configuration, sort_keys=False), encoding="utf-8"
+        )
+
+        port = port_libre()
+        cls._conteneur = ConteneurJetable(f"obs-test-collector-{cls.__name__.lower()}", [
+            "-p", f"127.0.0.1:{port}:4318",
+            *cls.ENVIRONNEMENT,
+            "-v", f"{dossier / 'config.yaml'}:/etc/otelcol/config.yaml:ro",
+            "-v", f"{dossier}:/sortie",
+            IMAGE_COLLECTOR, "--config=/etc/otelcol/config.yaml",
+        ])
+        cls._conteneur.__enter__()
+        try:
+            cls._envoyer_et_relire(dossier, port)
+        except BaseException:
+            cls.tearDownClass()
+            raise
+
+    @classmethod
+    def _envoyer_et_relire(cls, dossier: Path, port: int) -> None:
+        cls._conteneur.attendre_journal("Everything is ready", timeout=90)
+        spans = [
+            {
+                "traceId": f"5b8efff798038103d269b633813fc6{rang:02x}",
+                "spanId": f"eee19b7ec3c1b1{rang:02x}",
+                "name": nom,
+                "kind": 2,  # SERVER
+                "startTimeUnixNano": "1000000000",
+                "endTimeUnixNano": "1030000000",  # 30 ms
+                "attributes": [
+                    {"key": cle, "value": {"intValue": str(valeur)} if isinstance(valeur, int)
+                     else {"stringValue": valeur}}
+                    for cle, valeur in attributs.items()
+                ],
+            }
+            for rang, (nom, attributs) in enumerate(cls.SPANS, start=1)
+        ]
+        charge = json.dumps({"resourceSpans": [{
+            "resource": {"attributes": [
+                {"key": "service.name", "value": {"stringValue": "gateway"}},
+            ]},
+            "scopeSpans": [{"spans": spans}],
+        }]}).encode("utf-8")
+        requete = urllib.request.Request(  # noqa: S310 - URL locale de test
+            f"http://127.0.0.1:{port}/v1/traces",
+            data=charge,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(requete, timeout=30) as reponse:  # noqa: S310
+            assert reponse.status == 200, reponse.status
+
+        # Le connecteur purge toutes les 15 s (`metrics_flush_interval`). Deux spans repliés
+        # sur `autre` partagent une série : on attend donc le nombre de séries DISTINCTES.
+        attendues = len(cls.SPANS) - cls.REPLIS_PARTAGES
+        fichier = dossier / "metriques.json"
+        limite = time.monotonic() + 90
+        cls.points, cls.bornes = [], []
+        while time.monotonic() < limite and len(cls.points) < attendues:
+            time.sleep(1)
+            if not fichier.exists():
+                continue
+            points: dict[str, dict[str, str]] = {}
+            for ligne in fichier.read_text(encoding="utf-8").splitlines():
+                for ressource in json.loads(ligne)["resourceMetrics"] if ligne.strip() else []:
+                    for portee in ressource["scopeMetrics"]:
+                        for metrique in portee["metrics"]:
+                            if "histogram" not in metrique:
+                                continue
+                            for point in metrique["histogram"]["dataPoints"]:
+                                cls.bornes = [float(b) for b in point["explicitBounds"]]
+                                etiquettes = {
+                                    a["key"]: str(next(iter(a["value"].values())))
+                                    for a in point["attributes"]
+                                }
+                                points[json.dumps(etiquettes, sort_keys=True)] = etiquettes
+            cls.points = list(points.values())
+        assert len(cls.points) >= attendues, f"points exportés : {cls.points}"
+
+    REPLIS_PARTAGES = 0
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._conteneur.__exit__()
+        shutil.rmtree(cls._dossier, ignore_errors=True)
+
+    def _noms_de_span(self) -> set[str]:
+        return {point["span.name"] for point in self.points}
+
+    def _noms_d_operation(self) -> set[str | None]:
+        return {point.get("graphql.operation.name") for point in self.points}
+
+
+@BESOIN_DOCKER
+class OperationsGraphQLSansListeBlanche(_CollecteurDesOperations, unittest.TestCase):
+    """Le DÉFAUT, sans GRAPHQL_OPERATIONS_CONNUES : aucun nom ne devient une série.
+
+    Le nom vient du client ; une plateforme qui ne connaît pas les opérations du consommateur
+    ne doit pas ouvrir une série par nom forgé. Seul le type, borné, reste ventilé.
+    """
+
+    SPANS = (
+        ("query ListerCommandes",
+         {"graphql.operation.type": "query", "graphql.operation.name": "ListerCommandes"}),
+        ("mutation CreerCommande",
+         {"graphql.operation.type": "mutation", "graphql.operation.name": "CreerCommande"}),
+        ("query Forge7f3a",
+         {"graphql.operation.type": "query", "graphql.operation.name": "Forge7f3a"}),
+        ("GET /sante", {}),
+    )
+    REPLIS_PARTAGES = 1  # ListerCommandes et Forge7f3a tombent dans « query autre »
+
+    def test_aucun_nom_d_operation_ne_devient_une_serie(self) -> None:
+        self.assertEqual(self._noms_d_operation() - {None}, {"autre"})
+        self.assertEqual(self._noms_de_span(), {"query autre", "mutation autre", "GET /sante"})
+
+
+@BESOIN_DOCKER
+class OperationsGraphQLListeBlancheVide(OperationsGraphQLSansListeBlanche):
+    """Une variable posée VIDE, celle d'un relais `${GRAPHQL_OPERATIONS_CONNUES:-}`, vaut une absence."""
+
+    ENVIRONNEMENT = ("-e", "GRAPHQL_OPERATIONS_CONNUES=")
+
+
+@BESOIN_DOCKER
+class OperationsGraphQLAvecListeBlanche(_CollecteurDesOperations, unittest.TestCase):
+    """AVEC GRAPHQL_OPERATIONS_CONNUES : la borne de NOMBRE, une liste blanche ancrée.
+
+    Un nom forgé à chaque appel doit se replier sur `autre`, sur l'étiquette ET sur
+    `span.name`, faute de quoi chaque appel créerait sa propre série.
+    """
+
+    ENVIRONNEMENT = ("-e", "GRAPHQL_OPERATIONS_CONNUES=ListerCommandes|CreerCommande")
+    SPANS = (
+        ("query ListerCommandes",
+         {"graphql.operation.type": "query", "graphql.operation.name": "ListerCommandes"}),
+        ("query Forge7f3a",
+         {"graphql.operation.type": "query", "graphql.operation.name": "Forge7f3a"}),
+        # Une liste blanche non ancrée laisserait passer un nom qui CONTIENT un nom connu.
+        ("mutation CreerCommandeX",
+         {"graphql.operation.type": "mutation", "graphql.operation.name": "CreerCommandeX"}),
+        ("bizarre", {"graphql.operation.type": "bizarre"}),
+        # Un nom sans type : le repli ne doit pas fabriquer un nom de span vide ou forgé.
+        ("SansType", {"graphql.operation.name": "SansType"}),
+        # Une valeur qui n'est pas une chaîne ne doit pas faire échouer l'instruction, ce qui
+        # la laisserait passer sans borne (`error_mode: ignore`).
+        ("query 1234", {"graphql.operation.type": "query", "graphql.operation.name": 1234}),
+        ("GET /sante", {}),
+    )
+    REPLIS_PARTAGES = 1  # Forge7f3a et 1234 tombent dans « query autre »
+
+    def test_une_operation_connue_garde_son_nom(self) -> None:
+        self.assertIn(
+            {"span.name": "query ListerCommandes", "graphql.operation.type": "query",
+             "graphql.operation.name": "ListerCommandes"},
+            [{k: v for k, v in p.items() if k.startswith(("span.name", "graphql."))}
+             for p in self.points],
+        )
+
+    def test_un_nom_forge_valide_se_replie_sur_autre(self) -> None:
+        """L'attribut ET le nom du span : `span.name` est une dimension native du connecteur."""
+        self.assertNotIn("query Forge7f3a", self._noms_de_span())
+        self.assertIn("query autre", self._noms_de_span())
+        self.assertNotIn("Forge7f3a", self._noms_d_operation())
+
+    def test_un_nom_qui_n_est_pas_une_chaine_se_replie_aussi(self) -> None:
+        self.assertNotIn("1234", self._noms_d_operation())
+        self.assertNotIn("query 1234", self._noms_de_span())
+
+    def test_la_liste_blanche_est_ancree(self) -> None:
+        self.assertNotIn("mutation CreerCommandeX", self._noms_de_span())
+        self.assertIn("mutation autre", self._noms_de_span())
+
+    def test_un_nom_sans_type_se_replie_aussi(self) -> None:
+        sans_type = [p for p in self.points
+                     if "graphql.operation.type" not in p and "graphql.operation.name" in p]
+        self.assertTrue(sans_type, f"points : {self.points}")
+        self.assertEqual(sans_type[0]["graphql.operation.name"], "autre")
+        self.assertNotIn("SansType", self._noms_de_span())
+        # Concat d'un type absent écrirait « <nil> autre ».
+        self.assertEqual(sans_type[0]["span.name"], "autre")
+
+    def test_le_type_est_borne_aux_trois_valeurs_de_la_specification(self) -> None:
+        types = {p["graphql.operation.type"] for p in self.points if "graphql.operation.type" in p}
+        self.assertLessEqual(types, {"query", "mutation", "subscription", "autre"})
+        self.assertIn("autre", types)
+
+    def test_un_span_hors_graphql_n_a_aucune_dimension_graphql(self) -> None:
+        sante = [p for p in self.points if p["span.name"] == "GET /sante"]
+        self.assertTrue(sante)
+        self.assertFalse({k for k in sante[0] if k.startswith("graphql.")})
+
+    def test_les_seaux_exportes_sont_ceux_de_la_configuration(self) -> None:
+        self.assertEqual(self.bornes, _bornes_des_seaux_en_ms())
+        self.assertIn(500.0, self.bornes)
+        self.assertIn(2000.0, self.bornes)
 
 
 def load_tests(

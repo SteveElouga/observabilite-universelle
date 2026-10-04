@@ -39,7 +39,11 @@ services:
     # utilise `action: insert` et ne peut plus écraser le `deployment.environment` envoyé par
     # un SDK (voir otel-collector-config.yaml). Valeur volontairement laissée à « prod » : elle
     # ne s'applique qu'aux émetteurs qui ne déclarent rien.
-    environment: { DEPLOY_ENV: "${DEPLOY_ENV:-prod}" }
+    # GRAPHQL_OPERATIONS_CONNUES : liste blanche des opérations GraphQL ventilées dans les
+    # métriques (voir otel-collector-config.yaml). Vide = tout en « autre ».
+    environment:
+      DEPLOY_ENV: "${DEPLOY_ENV:-prod}"
+      GRAPHQL_OPERATIONS_CONNUES: "${GRAPHQL_OPERATIONS_CONNUES:-}"
     # Plafond de conteneur AU-DESSUS du plafond logiciel (memory_limiter: 512 Mio + 128 de
     # pointe) : le Collector doit refuser des lots AVANT que le noyau ne le tue. Sans limite,
     # Loki, Tempo et Pyroscope ont été tués par l'OOM killer de l'hôte (code 137) le 12/09.
