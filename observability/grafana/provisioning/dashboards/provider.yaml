@@ -8,11 +8,14 @@
 # redémarrage, et c'est voulu : le dashboard versionné est la seule vérité. Qui veut changer un
 # panneau l'exporte, remplace le JSON, et le fait passer en revue comme du code.
 #
-# Ce fichier ne déclare que le dossier « Socle » : les écrans GÉNÉRIQUES, qui ne nomment aucun
-# service du consommateur, et les seuls que l'image publiée embarque. Un consommateur qui veut
-# ses propres écrans (sur ses compteurs à lui) les déclare dans un fichier voisin : Grafana lit
-# TOUS les .yaml de ce répertoire. Celui du premier consommateur vit dans le dépôt, à côté,
-# chargé par le compose et écarté de l'image par .dockerignore — l'image reste neutre.
+# Deux dossiers, et aucun ne nomme un projet :
+#   · « Socle »  : les écrans GÉNÉRIQUES, versionnés ici et embarqués dans l'image ;
+#   · « Projet » : les écrans du PROJET OBSERVÉ, qu'il fournit lui-même en montant ses JSON dans
+#     `dashboards/consommateur/` (lecture seule). Le répertoire est vide dans l'image et dans le
+#     dépôt (un `.gitkeep`, sans lequel le montage échouerait en mode compose : on ne crée pas
+#     de point de montage sous un `./grafana/provisioning` déjà monté en `:ro`). Vide, il ne
+#     provisionne rien et Grafana ne signale aucune erreur. Voir README, « Ce que le projet
+#     fournit ».
 apiVersion: 1
 providers:
   - name: socle
@@ -26,3 +29,13 @@ providers:
       path: /etc/grafana/provisioning/dashboards/socle
       foldersFromFilesStructure: false
 
+  - name: consommateur
+    orgId: 1
+    folder: Projet
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/consommateur
+      foldersFromFilesStructure: false

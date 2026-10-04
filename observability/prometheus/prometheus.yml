@@ -101,6 +101,15 @@ scrape_configs:
   - job_name: keycloak                 # alerte « échecs de connexion anormaux » §8.4
     file_sd_configs: [{ files: ["/etc/prometheus/targets/keycloak.yml"] }]
 
+  # --- Cibles FOURNIES PAR LE PROJET OBSERVÉ : il monte ses fichiers `file_sd` dans
+  #     `targets/consommateur/` (lecture seule ; répertoire vide dans l'image, `.gitkeep` dans
+  #     le dépôt pour le mode compose). Le job ne nomme aucun projet : c'est le projet qui pose
+  #     ses étiquettes, et `__metrics_path__` / `__scheme__` s'il le faut, dans ses fichiers.
+  #     Répertoire vide = aucune cible, aucune série, aucune erreur. README, « Ce que le
+  #     projet fournit ».
+  - job_name: consommateur
+    file_sd_configs: [{ files: ["/etc/prometheus/targets/consommateur/*.yml"] }]
+
   # --- Gabarit PROD : cibles publiques en HTTPS (module http_2xx, exige un TLS valide).
   #     Décommentez et remplacez par vos URLs une fois la plateforme exposée derrière un proxy TLS.
   # - job_name: blackbox-public

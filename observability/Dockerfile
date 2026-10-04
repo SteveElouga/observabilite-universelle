@@ -3,8 +3,8 @@
 # Dockerfile — socle d'observabilité en UNE image.
 #
 # POURQUOI CETTE IMAGE EXISTE. Le socle est nativement une composition de seize images amont.
-# GP-Formuloo veut pouvoir tirer une image et déclarer UN service dans son compose ; c'est ce
-# que produit ce fichier. Le dépôt reste la source de vérité : rien n'est recopié ailleurs.
+# Un projet consommateur veut pouvoir tirer une image et déclarer UN service dans son compose ;
+# c'est ce que produit ce fichier. Le dépôt reste la source de vérité : rien n'est recopié ailleurs.
 #
 # CE QU'ELLE CONTIENT — le pipeline de télémétrie, c'est-à-dire ce dont FT-3 a besoin :
 #   OTel Collector · Prometheus · Loki · Tempo · Pyroscope · Grafana · Alertmanager · Alloy
@@ -170,7 +170,7 @@ ENV DEPLOY_ENV=prod
 # root. C'est aussi pourquoi Caddy écoute sur 8443/8080 et non sur 443/80.
 
 # 8443/8080 : Caddy, seul point d'entrée en mode durci.
-# 4317/4318 : OTLP — les applications de gp-formuloo émettent ici, par le réseau Docker partagé.
+# 4317/4318 : OTLP — les applications du projet consommateur émettent ici, par le réseau Docker partagé.
 # 12347     : réception Faro (RUM navigateur), normalement atteinte via Caddy.
 EXPOSE 8443 8080 4317 4318 12347
 

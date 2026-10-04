@@ -9,6 +9,7 @@ vérifie ce que le binaire répond.
 
 from __future__ import annotations
 
+import codecs
 import os
 import re
 import shutil
@@ -41,8 +42,8 @@ class ValidationParLesBinairesReels(unittest.TestCase):
             "check", "config", "/etc/prometheus/prometheus.yml",
         ])
         self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
-        # Les fichiers de règles ajoutés pour SGFE doivent être chargés, pas seulement présents.
-        for fichier in ("sgfe.yml", "collecte.yml", "veilleuse.yml", "slo-sgfe.yml"):
+        # Les fichiers de règles du socle doivent être chargés, pas seulement présents.
+        for fichier in ("collecte.yml", "veilleuse.yml"):
             self.assertIn(fichier, resultat.stdout, f"{fichier} n'est pas chargé par Prometheus")
 
     def _verifier_avec_regles_du_consommateur(self, regles: dict[str, str]) -> str:
@@ -208,6 +209,38 @@ class TestsUnitairesDesReglesPrometheus(unittest.TestCase):
         self.assertIn("SUCCESS", resultat.stdout)
 
 
+# Noms propres aux projets connus : un projet, ou un service qui n'existe que chez lui. Écrits en
+# rot13 pour que le dépôt ne les contienne pas lui-même — sinon la garde se trouverait elle-même.
+# Ajouter ici tout nouveau projet qui tire l'image : `codecs.encode("nom", "rot_13")`.
+NOMS_DE_PROJETS: str = "|".join(
+    codecs.decode(nom, "rot_13") for nom in ("ftsr", "sbezhybb", "jungfncc")
+)
+
+
+class NeutraliteDuDepot(unittest.TestCase):
+    """La plateforme est un greffon : AUCUN fichier du dépôt ne nomme un projet (décision du
+    04/10/2026). C'est le projet qui fournit règles, tableaux et cibles (README, « Ce que le
+    projet fournit »). Fichiers suivis ET fichiers nouveaux non ignorés, contenu ET noms."""
+
+    def test_aucun_fichier_du_depot_ne_nomme_un_projet(self) -> None:
+        depot = RACINE.parent
+        contenus = executer([
+            "git", "-C", str(depot), "grep", "-il", "--untracked", "-E", NOMS_DE_PROJETS,
+        ])
+        # git grep rend 1 quand rien ne correspond, 0 quand il trouve : 2 et plus = erreur.
+        self.assertLess(contenus.returncode, 2, contenus.stderr)
+        fichiers = executer([
+            "git", "-C", str(depot), "ls-files", "--cached", "--others", "--exclude-standard",
+        ])
+        self.assertEqual(fichiers.returncode, 0, fichiers.stderr)
+        self.assertGreater(len(fichiers.stdout.splitlines()), 50, "dépôt mal lu : garde à vide")
+        noms = [n for n in fichiers.stdout.splitlines() if re.search(NOMS_DE_PROJETS, n, re.I)]
+        self.assertEqual(
+            (contenus.stdout.split(), noms), ([], []),
+            "des fichiers du dépôt nomment un projet (contenu, puis noms de fichiers)",
+        )
+
+
 @BESOIN_DOCKER
 class NeutraliteDeLImage(unittest.TestCase):
     """L'image publiée est universelle : elle ne nomme aucun projet consommateur.
@@ -218,16 +251,10 @@ class NeutraliteDeLImage(unittest.TestCase):
     c'est lui seul qui décide de ce qui entre, et c'est lui qu'il faut prendre en défaut.
     """
 
-    # Noms des consommateurs connus. Ajouter ici tout nouveau projet qui tire l'image.
-    CONSOMMATEURS = "sgfe|formuloo"
-
     def test_aucun_fichier_embarque_ne_nomme_un_consommateur(self) -> None:
         dockerfile = (RACINE / "Dockerfile").read_text(encoding="utf-8")
         copies = re.findall(r"^COPY\s+(?!--)(\S+)\s+(\S+)\s*$", dockerfile, re.MULTILINE)
         self.assertGreater(len(copies), 10, "les COPY du Dockerfile n'ont pas été relevés")
-        # La moitié qui rend la preuve possible : les sources copiées CONTIENNENT ces noms, donc
-        # une image propre ne l'est que par l'exclusion, pas par hasard.
-        self.assertTrue((RACINE / "prometheus" / "rules" / "sgfe.yml").is_file())
 
         with tempfile.TemporaryDirectory() as dossier:
             gabarit = Path(dossier) / "Dockerfile"
@@ -247,7 +274,7 @@ class NeutraliteDeLImage(unittest.TestCase):
         # Garde contre un succès à vide : la configuration doit bien être là.
         self.assertEqual(lancer("test -f /etc/prometheus/prometheus.yml && echo ok"), "ok")
         self.assertEqual(
-            lancer(f"grep -rliE '{self.CONSOMMATEURS}' /etc /usr/local/bin"), "",
+            lancer(f"grep -rliE '{NOMS_DE_PROJETS}' /etc /usr/local/bin"), "",
             "des fichiers embarqués nomment un projet consommateur",
         )
         self.assertEqual(

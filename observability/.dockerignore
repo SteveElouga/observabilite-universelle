@@ -23,13 +23,6 @@ README.md
 # pour la démo, seule l'image cesse de transporter ce qui ne la regarde pas.
 prometheus/rules/rules-slo.yml
 
-# NEUTRALITÉ — l'image est UNIVERSELLE et ne doit nommer aucun projet consommateur. Jusqu'à la
-# 1.1.7, elle embarquait les règles, SLO, tableaux et cibles d'un projet consommateur précis :
-# chaque autre consommateur voyait en préprod un dossier Grafana, des alertes et des jobs à son
-# nom. Ces fichiers restent dans le dépôt (le compose les monte), mais tout nom qui le contient
-# reste hors de l'image — un motif plutôt qu'une liste, pour qu'un fichier ajouté demain sous
-# ce nom ne puisse pas y entrer par oubli. Un répertoire écarté l'est avec tout son contenu.
-**/*sgfe*
 # La DÉMONSTRATION de ce dépôt : un job (`blackbox-demo`) et des cibles qui visent des
 # conteneurs n'existant que dans son compose. Même raison que les SLO de démo ci-dessus.
 prometheus/scrape.d/demo.yml

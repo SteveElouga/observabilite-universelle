@@ -1,7 +1,9 @@
 # prometheus/targets/ — cibles optionnelles, découvertes par fichier
 
-Cinq jobs de `prometheus.yml` lisent ce répertoire au lieu d'une liste en dur : `postgres`,
-`rabbitmq`, `keycloak`, `blackbox-application-graphql` et `blackbox-application-http`. Ils
+Six jobs de `prometheus.yml` lisent ce répertoire au lieu d'une liste en dur : `postgres`,
+`rabbitmq`, `keycloak`, `blackbox-application-graphql`, `blackbox-application-http` et
+`consommateur` — ce dernier lit `consommateur/*.yml`, sous-répertoire vide que le projet observé
+monte avec ses propres cibles (README principal, « Ce que le projet fournit »). Ils
 alimentent les alertes §8.4 (DLQ, échecs d'authentification, sondes) et les dashboards §8.3
 (PostgreSQL, RabbitMQ) du projet consommateur. En compose, un sixième s'y ajoute,
 `blackbox-demo` (`prometheus/scrape.d/demo.yml`), que l'image publiée n'embarque pas.
