@@ -10,9 +10,9 @@ Les requêtes proposées s'exécutent dans Grafana, en explorateur, sur la sourc
 
 ## HighErrorRate
 
-Gravité page. L'alerte se déclenche quand plus de cinq pour cent des spans d'un service sont en erreur sur cinq minutes. C'est un symptôme utilisateur direct : une part significative des requêtes échoue.
+Gravité page. L'alerte se déclenche quand plus de cinq pour cent des requêtes servies par un service (ses spans serveur) sont en erreur sur cinq minutes. C'est un symptôme utilisateur direct : une part significative des requêtes échoue. Ses appels sortants (gRPC, SQL) n'entrent pas dans le calcul. Angle mort : un service arrêté n'émet plus de span et ne fait rien sonner, pas plus que son appelant s'il rend l'indisponibilité dans une réponse « réussie » (erreur GraphQL en HTTP 200, repli) ; les spans des consommateurs de files et du navigateur ne comptent pas non plus. Le signal de remplacement reste à choisir (voir observability/runbooks/README.md).
 
-Diagnostic. Confirmez le taux et le service avec, sur Prometheus, `sum by (service_name) (rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) / sum by (service_name) (rate(traces_span_metrics_calls_total[5m]))`. Sur l'écran RED, cliquez un exemplar de la courbe d'erreur pour ouvrir une trace en échec, ou cherchez dans Tempo les traces en erreur du service avec `{ resource.service.name = "units-service" && status = error }`. Depuis le span fautif, ouvrez ses logs pour lire le message d'erreur, puis vérifiez GlitchTip, qui regroupe les exceptions avec leur pile d'appel et la version concernée.
+Diagnostic. Confirmez le taux et le service avec, sur Prometheus, `sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m])) / sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[5m]))`. Sur l'écran RED, cliquez un exemplar de la courbe d'erreur pour ouvrir une trace en échec, ou cherchez dans Tempo les traces en erreur du service avec `{ resource.service.name = "units-service" && status = error }`. Depuis le span fautif, ouvrez ses logs pour lire le message d'erreur, puis vérifiez GlitchTip, qui regroupe les exceptions avec leur pile d'appel et la version concernée.
 
 Remédiation. Si l'erreur a suivi un déploiement, revenez à la version précédente en priorité, puis corrigez à froid. Si elle vient d'une dépendance en panne, traitez la dépendance. Une fois la correction déployée, vérifiez le retour du taux d'erreur sous le seuil sur l'écran RED.
 
@@ -20,9 +20,9 @@ Escalade. Comme c'est une alerte de niveau page, si le taux ne redescend pas rap
 
 ## HighLatencyP99
 
-Gravité ticket. L'alerte se déclenche quand le quatre-vingt-dix-neuvième centile de latence dépasse cinq cents millisecondes sur dix minutes. Le service répond, mais trop lentement pour une part des utilisateurs.
+Gravité ticket. L'alerte se déclenche quand le quatre-vingt-dix-neuvième centile de latence des requêtes servies (spans serveur) dépasse cinq cents millisecondes sur dix minutes. Le service répond, mais trop lentement pour une part des utilisateurs.
 
-Diagnostic. Visualisez le centile avec `histogram_quantile(0.99, sum by (le, service_name) (rate(traces_span_metrics_duration_milliseconds_bucket[5m])))`. Dans Tempo, ouvrez les traces les plus lentes du service avec `{ resource.service.name = "units-service" && duration > 500ms }` et repérez, dans la trace, le span où le temps se concentre. Si le profilage continu est en place, descendez de la trace vers le profil pour identifier la fonction coûteuse.
+Diagnostic. Visualisez le centile avec `histogram_quantile(0.99, sum by (le, service_name) (rate(traces_span_metrics_duration_milliseconds_bucket{span_kind="SPAN_KIND_SERVER"}[5m])))`. Dans Tempo, ouvrez les traces les plus lentes du service avec `{ resource.service.name = "units-service" && duration > 500ms }` et repérez, dans la trace, le span où le temps se concentre. Si le profilage continu est en place, descendez de la trace vers le profil pour identifier la fonction coûteuse.
 
 Remédiation. Selon la cause, optimisez le point chaud, ajoutez de la mise en cache, ou augmentez les ressources. Vérifiez le retour du centile sous le seuil.
 

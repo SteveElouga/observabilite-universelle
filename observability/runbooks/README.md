@@ -15,8 +15,17 @@ fait**. Si une fiche ne peut pas répondre à la troisième, l'alerte n'a rien �
 **Ce que ça veut dire.** Plus de 5 % des requêtes SERVIES par un service (spans serveur,
 `span_kind="SPAN_KIND_SERVER"`) portent `STATUS_CODE_ERROR` depuis cinq minutes. Mesuré sur 100 %
 du trafic, avant échantillonnage : le chiffre n'est pas une estimation. Les appels sortants
-(gRPC, SQL) n'entrent pas dans le calcul : une dépendance en panne fait sonner la dépendance,
-et l'appelant seulement s'il renvoie lui-même l'erreur.
+(gRPC, SQL) n'entrent pas dans le calcul : un appel sortant en échec ne fait sonner l'appelant
+que s'il rend lui-même une erreur serveur.
+
+**Angle mort.** Cette alerte ne voit PAS un service arrêté : il n'émet plus aucun span, donc ne fait
+rien sonner. Son appelant ne sonne pas davantage s'il traduit l'indisponibilité en réponse
+« réussie », par exemple une passerelle GraphQL qui rend l'erreur dans le champ `errors` d'une
+réponse HTTP 200, ou un repli silencieux. Les spans CONSUMER (consommateurs de files) et les spans
+du navigateur n'entrent pas non plus dans le calcul. Aucun signal de remplacement n'est encore
+retenu : une alerte sur les spans CLIENT en erreur, ou une sonde de bout en bout qui lit le corps
+de la réponse, sont les deux pistes. En attendant, un service arrêté ne se voit qu'à l'œil : sa
+courbe disparaît du panneau « Débit » de la ligne « RED par service », écran *Vue d'ensemble*.
 
 **Ce qu'on regarde.** Dashboard *Par service*, sélecteur sur le service en cause → panneau
 « Erreurs par opération » pour savoir si l'erreur est diffuse ou concentrée sur une opération.

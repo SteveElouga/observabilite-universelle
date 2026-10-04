@@ -6,10 +6,17 @@
 #
 # Les deux alertes ne lisent QUE les spans serveur (`span_kind="SPAN_KIND_SERVER"`, dimension
 # par défaut du connecteur, vérifiée sur otelcol-contrib 0.116.1). Une requête servie produit
-# aussi des spans CLIENT (appel gRPC sortant, requête SQL) et INTERNAL : en les comptant, une
-# dépendance en panne faisait sonner l'appelant ET l'appelé pour la même cause, et une requête
-# SQL lente passait pour une requête utilisateur lente. Le symptôme RED, c'est ce que le service
-# REND ; ses appels sortants se lisent au diagnostic, dans le tableau « Par service ».
+# aussi des spans CLIENT (appel gRPC sortant, requête SQL) et INTERNAL : en les comptant, l'échec
+# d'un appel sortant faisait monter le taux de l'appelant même quand il rendait une réponse
+# correcte, et une requête SQL lente passait pour une requête utilisateur lente. Le symptôme RED,
+# c'est ce que le service REND ; ses appels sortants se lisent au diagnostic (tableau « Par service »).
+#
+# ANGLE MORT assumé (runbooks/README.md#higherrorrate) : un service ARRÊTÉ n'émet plus aucun span,
+# donc ne fait rien sonner ; son appelant ne sonne que s'il rend lui-même une erreur serveur. Un
+# appelant qui traduit l'indisponibilité en réponse « réussie » (erreur GraphQL en HTTP 200, repli)
+# ne sonne pas non plus. Les spans CONSUMER (files de messages) et ceux du navigateur ne comptent
+# plus. Le signal de remplacement (alerte sur les spans CLIENT en erreur, ou sonde de bout en bout
+# qui lit le corps de la réponse) reste à choisir.
 groups:
   - name: service-red
     rules:
