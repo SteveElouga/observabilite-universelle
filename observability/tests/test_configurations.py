@@ -10,7 +10,10 @@ vérifie ce que le binaire répond.
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 from outils import (
     BESOIN_DOCKER,
@@ -40,6 +43,50 @@ class ValidationParLesBinairesReels(unittest.TestCase):
         # Les fichiers de règles ajoutés pour SGFE doivent être chargés, pas seulement présents.
         for fichier in ("sgfe.yml", "collecte.yml", "veilleuse.yml", "slo-sgfe.yml"):
             self.assertIn(fichier, resultat.stdout, f"{fichier} n'est pas chargé par Prometheus")
+
+    def _verifier_avec_regles_du_consommateur(self, regles: dict[str, str]) -> str:
+        """Monte `regles` (nom → contenu) là où un consommateur les monte, et rend la sortie.
+
+        Le montage imbriqué SOUS `./prometheus:ro` est celui du mode compose, le plus exigeant :
+        il ne tient que si le point de montage existe déjà dans le dépôt (le `.gitkeep`).
+        """
+        dossier = Path(tempfile.mkdtemp(prefix="obs-test-consommateur-"))
+        self.addCleanup(shutil.rmtree, dossier, ignore_errors=True)
+        for nom, contenu in regles.items():
+            (dossier / nom).write_text(contenu, encoding="utf-8")
+        resultat = executer([
+            "docker", "run", "--rm", "-v", f"{RACINE}/prometheus:/etc/prometheus:ro",
+            "-v", f"{dossier}:/etc/prometheus/rules/consommateur:ro",
+            "--entrypoint", "promtool", IMAGE_PROMETHEUS,
+            "check", "config", "/etc/prometheus/prometheus.yml",
+        ])
+        return f"code={resultat.returncode}\n{resultat.stdout}{resultat.stderr}"
+
+    def test_une_regle_deposee_par_un_consommateur_est_chargee(self) -> None:
+        # La plateforme n'embarque aucune règle d'un projet observé : elles arrivent par ce
+        # répertoire. Le fichier doit être LU, pas seulement listé — d'où le décompte de règles.
+        sortie = self._verifier_avec_regles_du_consommateur({"projet.yml": (
+            "groups:\n  - name: projet\n    rules:\n"
+            "      - alert: ExempleDuConsommateur\n        expr: vector(1) > 0\n"
+            "        labels: { severity: ticket }\n"
+        )})
+        self.assertTrue(sortie.startswith("code=0\n"), sortie)
+        self.assertIn("Checking /etc/prometheus/rules/consommateur/projet.yml", sortie)
+        self.assertIn("SUCCESS: 1 rules found", sortie.split("consommateur/projet.yml", 1)[1])
+
+    def test_une_regle_invalide_du_consommateur_est_refusee(self) -> None:
+        # La contre-épreuve : si le motif ne chargeait rien, un fichier cassé passerait aussi.
+        sortie = self._verifier_avec_regles_du_consommateur(
+            {"casse.yml": "groups:\n  - name: casse\n    rules:\n      - alert: X\n        expr: (\n"}
+        )
+        self.assertFalse(sortie.startswith("code=0\n"), sortie)
+        self.assertIn("consommateur/casse.yml", sortie)
+
+    def test_un_repertoire_du_consommateur_vide_ne_casse_rien(self) -> None:
+        # Le cas de toute installation qui ne monte rien : l'image livre ce répertoire vide.
+        sortie = self._verifier_avec_regles_du_consommateur({})
+        self.assertTrue(sortie.startswith("code=0\n"), sortie)
+        self.assertNotIn("consommateur/", sortie)
 
     def test_loki_accepte_sa_configuration_avec_la_retention_active(self) -> None:
         resultat = executer([
