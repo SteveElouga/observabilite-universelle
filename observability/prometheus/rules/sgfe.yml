@@ -1,0 +1,170 @@
+# prometheus/rules/sgfe.yml — alertes du CONSOMMATEUR (SGFE), §8.4.
+#
+# Fichier délibérément nommé d'après le projet, à côté des règles génériques du socle. Le
+# constat du 11/09/2026 était sans appel : la plateforme surveillait Grafana, Loki, Tempo et
+# une application de démonstration, mais RIEN de l'application réelle. Pendant ce temps
+# `sgfe_notification_envoi_total{statut="ECHEC"}` valait 182 sans un seul `ENVOYE` — le canal
+# métier principal (WhatsApp) était à 100 % d'échec depuis deux jours, et aucune règle ne le
+# regardait. Une plateforme d'observabilité générique n'excuse pas l'absence de règles pour ce
+# qu'elle observe : le générique est le socle, le spécifique est ce fichier.
+#
+# Source des séries : métriques OTel poussées par les 9 composants
+# (services/<svc>/<app>/metrics.py), traduites par le Collector en `sgfe_*_total` avec les
+# étiquettes `job="sgfe/<service>"`, `service_name`, `service_namespace="sgfe"`.
+groups:
+  # ── Canal WhatsApp : le cœur métier ───────────────────────────────────────────────────
+  - name: sgfe-notifications
+    rules:
+      - alert: SGFEEnvoisWhatsAppEnEchec
+        expr: |
+          sum(rate(sgfe_notification_envoi_total{statut="ECHEC"}[15m]))
+          /
+          sum(rate(sgfe_notification_envoi_total[15m]))
+          > 0.2
+        for: 15m
+        labels: { severity: page, service_name: notification-service }
+        annotations:
+          summary: "SGFE : {{ $value | humanizePercentage }} des envois WhatsApp échouent"
+          description: >-
+            Plus d'un envoi sur cinq échoue depuis quinze minutes. Vérifier d'abord l'état de
+            la passerelle WhatsApp (`whatsapp-service`, GET /health : `phase` doit valoir
+            `ready`, pas `qr`) : une session non appairée fait échouer 100 % des envois sans
+            qu'aucun service ne tombe. Les envois échoués sont rejoués par le retry
+            automatique, mais les factures ne partent pas tant que la session n'est pas liée.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgfeenvoiswhatsappenechec"
+
+      # Le ratio ci-dessus ne voit RIEN si la totalité des envois échoue depuis toujours :
+      # avec 100 % d'échec le ratio vaut 1 et déclenche, mais si le service arrête d'essayer
+      # (plus aucun envoi du tout), le ratio devient `NaN` et l'alerte s'éteint. Cette
+      # seconde règle attrape ce cas-là : on a tenté, et pas un seul envoi n'a abouti.
+      - alert: SGFEAucunEnvoiWhatsAppAbouti
+        expr: |
+          sum(increase(sgfe_notification_envoi_total[6h])) > 0
+          and
+          (sum(increase(sgfe_notification_envoi_total{statut="ENVOYE"}[6h])) or vector(0)) == 0
+        for: 30m
+        labels: { severity: page, service_name: notification-service }
+        annotations:
+          summary: "SGFE : aucun envoi WhatsApp abouti depuis 6 heures"
+          description: >-
+            Des envois sont tentés, aucun n'aboutit. Symptôme typique d'une session WhatsApp
+            jamais appairée (`phase: qr`) ou expirée. Rien ne parvient aux abonnés : factures,
+            reçus, suspensions et rétablissements sont tous bloqués.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgfeaucunenvoiwhatsappabouti"
+
+      - alert: SGFERetriesNotificationAnormaux
+        expr: sum(increase(sgfe_notification_retry_total[1h])) > 50
+        for: 15m
+        labels: { severity: ticket, service_name: notification-service }
+        annotations:
+          summary: "SGFE : {{ $value | printf \"%.0f\" }} reprises d'envoi en une heure"
+          description: >-
+            Le mécanisme de reprise travaille anormalement : il masque une panne du canal
+            plutôt qu'un aléa réseau. Croiser avec le taux d'échec ci-dessus.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgferetriesnotificationanormaux"
+
+  # ── Authentification ──────────────────────────────────────────────────────────────────
+  - name: sgfe-authentification
+    rules:
+      # Équivalent SGFE de `EchecsAuthentificationAnormaux` (qui interroge Keycloak — un
+      # composant que SGFE n'utilise pas, d'où une règle muette par construction). Ici la
+      # série existe réellement : `sgfe_auth_connexion_total{resultat="echec"}`.
+      - alert: SGFEEchecsAuthentificationAnormaux
+        expr: sum(increase(sgfe_auth_connexion_total{resultat="echec"}[5m])) > 20
+        for: 0m
+        labels: { severity: page, service_name: auth-service }
+        annotations:
+          summary: "SGFE : {{ $value | printf \"%.0f\" }} échecs de connexion en 5 minutes"
+          description: >-
+            Au-delà de vingt échecs par tranche de cinq minutes, l'hypothèse d'une erreur de
+            saisie ne tient plus. Chercher une adresse source unique dans les journaux du
+            service auth avant de bloquer un compte.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgfeechecsauthentificationanormaux"
+
+  # ── Présence des composants dans la télémétrie ────────────────────────────────────────
+  - name: sgfe-composants
+    rules:
+      # La liste des neuf composants attendus, écrite UNE fois. `target_info` est poussé par
+      # chaque SDK via le Collector : un composant qui ne pousse plus disparaît de Prometheus
+      # au bout de la fenêtre de rétro-observation (5 min), et l'alerte s'allume.
+      #
+      # Pourquoi pas `up == 0` : ces composants ne sont pas SCRUTÉS par Prometheus, ils
+      # POUSSENT via OTLP. Il n'existe donc aucune série `up` pour eux — c'est précisément
+      # pourquoi leur silence passait inaperçu.
+      - record: sgfe:composant_attendu:info
+        expr: |
+          label_replace(vector(1), "job", "sgfe/gateway",              "", "")
+          or label_replace(vector(1), "job", "sgfe/auth-service",         "", "")
+          or label_replace(vector(1), "job", "sgfe/abonne-service",       "", "")
+          or label_replace(vector(1), "job", "sgfe/campagne-service",     "", "")
+          or label_replace(vector(1), "job", "sgfe/facturation-service",  "", "")
+          or label_replace(vector(1), "job", "sgfe/paiement-service",     "", "")
+          or label_replace(vector(1), "job", "sgfe/notification-service", "", "")
+          or label_replace(vector(1), "job", "sgfe/reporting-service",    "", "")
+          or label_replace(vector(1), "job", "sgfe/config-service",       "", "")
+
+      - alert: SGFEComposantSansTelemetrie
+        expr: |
+          sgfe:composant_attendu:info
+          unless on (job) (count by (job) (target_info))
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "SGFE : {{ $labels.job }} n'envoie plus de télémétrie"
+          description: >-
+            Ce composant ne pousse plus ni trace ni métrique depuis dix minutes. Deux causes
+            possibles, à distinguer AVANT d'agir : le composant est tombé, ou c'est le
+            raccordement au Collector qui est rompu (réseau `obs-edge`, surcouche
+            docker-compose.observability.yml non appliquée). Vérifier les autres composants :
+            s'ils se taisent tous, c'est la seconde.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgfecomposantsanstelemetrie"
+
+  # ── Tâches planifiées ─────────────────────────────────────────────────────────────────
+  - name: sgfe-crons
+    rules:
+      # Le RUNBOOK du projet reconnaît lui-même que le symptôme d'un cron mort est
+      # « l'absence d'une ligne de log » — c'est-à-dire rien d'observable. Les six
+      # ordonnanceurs APScheduler (facturation, paiement, campagne, notification, reporting,
+      # auth) n'émettent aujourd'hui AUCUNE métrique de succès.
+      #
+      # Plutôt qu'une règle silencieusement muette de plus, celle-ci rend le TROU visible :
+      # tant que le backend n'écrit pas `sgfe_cron_last_success_timestamp_seconds`, la
+      # plateforme le dit au lieu de laisser croire que les crons sont surveillés. Contrat
+      # attendu côté applicatif (même convention que la sauvegarde) :
+      #   sgfe_cron_last_success_timestamp_seconds{cron="relances_impayes"} 1757000000
+      #
+      # `severity: dette` et non `ticket` (corrigé le 15/09/2026). Cette alerte est vraie en
+      # permanence jusqu'à instrumentation du backend : en `ticket` elle repartait dans
+      # #alertes toutes les 24 h, c'est-à-dire le bruit récurrent que C-354 venait de
+      # nettoyer. En `dette` elle part dans le canal de dette technique, une fois par semaine,
+      # avec une échéance de revue explicite — visible, mais jamais confondue avec un
+      # incident (routage : alertmanager.yml).
+      - alert: SGFECronsNonInstrumentes
+        expr: absent(sgfe_cron_last_success_timestamp_seconds)
+        for: 1h
+        labels: { severity: dette }
+        annotations:
+          summary: "SGFE : aucune tâche planifiée ne déclare son succès"
+          description: >-
+            La série `sgfe_cron_last_success_timestamp_seconds` n'existe pas : les six
+            ordonnanceurs APScheduler ne sont pas instrumentés, donc un cron mort ne peut PAS
+            être détecté. Faire émettre l'horodatage de dernier succès par chaque tâche
+            (étiquette `cron`), puis cette alerte s'éteint et `SGFECronEnRetard` prend le relais.
+          suivi: >-
+            Lacune d'instrumentation du dépôt observé, constat C-349 du 11/09/2026 (aucun
+            indicateur d'état des crons parmi les compteurs métier). Échéance de revue :
+            15/12/2026. Passé cette date, trancher — instrumenter les six ordonnanceurs, ou
+            retirer les deux règles — plutôt que de laisser cette alerte se répéter indéfiniment.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgfecronsnoninstrumentes"
+
+      - alert: SGFECronEnRetard
+        expr: time() - sgfe_cron_last_success_timestamp_seconds > 26 * 3600
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "SGFE : la tâche {{ $labels.cron }} n'a pas abouti depuis {{ $value | humanizeDuration }}"
+          description: >-
+            26 heures et non 24 : une tâche quotidienne qui glisse de deux heures reste saine.
+            Au-delà, la traiter comme une panne : relances d'impayés non envoyées, statistiques
+            non réconciliées, campagnes non clôturées selon la tâche concernée.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sgfecronenretard"

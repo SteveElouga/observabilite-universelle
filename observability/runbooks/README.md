@@ -160,3 +160,227 @@ travail qui a échoué, pas la mesure.
 **Ce qu'on fait.** Réparer le travail planifié **avant** de lancer une sauvegarde à la main. Une
 sauvegarde manuelle réussie éteint l'alerte sans corriger la cause, et masque la panne jusqu'au
 prochain incident réel — celui où l'on aura besoin de la sauvegarde.
+
+## SauvegardeJamaisDeclaree
+
+**Ce que ça veut dire.** La série `backup_last_success_timestamp_seconds` n'existe pas du tout.
+Ce n'est pas « la sauvegarde a échoué » : c'est « personne ne peut savoir si elle a réussi ».
+Tant que cette fiche s'applique, `SauvegardeAbsente` ne peut pas sonner, quoi qu'il arrive.
+
+**Ce qu'on regarde.** Deux maillons. Le collecteur textfile de `node-exporter` est-il actif
+(`--collector.textfile.directory`, voir `docker-compose.yml`) ? Et le travail de sauvegarde
+écrit-il un fichier `.prom` dans le volume partagé `textfile-data` ?
+
+**Ce qu'on fait.** Faire écrire l'horodatage par le travail lui-même, en fin d'exécution
+réussie et **de façon atomique** (écrire à côté puis `mv`, sinon node-exporter peut lire un
+fichier à moitié écrit) :
+
+```sh
+echo "backup_last_success_timestamp_seconds $(date +%s)" > /textfile/backup.prom.$$
+mv /textfile/backup.prom.$$ /textfile/backup.prom
+```
+
+## TelemetrieMetriquesPerdues
+
+**Ce que ça veut dire.** Le Collector n'arrive plus à pousser ses métriques et jette des lots
+entiers. Chaque point perdu l'est définitivement : les compteurs cumulés se recalent au lot
+suivant, mais les histogrammes de latence de la fenêtre manquante ne reviennent jamais.
+
+**Ce qu'on regarde.** *Vue d'ensemble* → saturation de l'hôte d'abord : la cause la plus
+fréquente est un disque ou un processeur saturé côté destination, qui met plus longtemps que
+`timeout` à accepter un lot. Puis `otelcol_exporter_queue_size` contre
+`otelcol_exporter_queue_capacity`.
+
+**Ce qu'on fait.** Libérer de l'espace (images et cache de construction Docker sont les
+premiers coupables), ou augmenter `remote_write_queue.queue_size` et `timeout` dans
+`otel-collector-config.yaml`. Ne pas se contenter d'agrandir la file : elle repousse le
+problème d'une minute, elle ne le règle pas.
+
+## TelemetrieTracesPerdues
+
+**Ce que ça veut dire.** Des spans n'atteignent pas Tempo. Plus grave qu'il n'y paraît : une
+trace absente fait croire qu'une requête n'a pas eu lieu.
+
+**Ce qu'on regarde.** Les mêmes indicateurs que ci-dessus, plus l'état de Tempo lui-même
+(`/ready`) et sa consommation mémoire — il a déjà été tué par l'OOM killer de l'hôte.
+
+**Ce qu'on fait.** Redémarrer Tempo s'il est mort, sinon traiter comme une saturation. Les
+métriques dérivées des spans (RED, SLO) ne sont PAS affectées : elles sont calculées dans le
+Collector avant l'export, sur 100 % du trafic.
+
+## FileExportCollectorPresqueSaturee
+
+**Ce que ça veut dire.** Le Collector accumule plus vite qu'il n'exporte. C'est le dernier
+avertissement avant la perte : au plein, les lots suivants sont jetés.
+
+**Ce qu'on regarde.** Le débit entrant (`otelcol_receiver_accepted_*`) contre le débit sortant
+(`otelcol_exporter_sent_*`). Un écart durable est une insuffisance de la destination, un pic
+est une rafale (suite de tests, import massif).
+
+**Ce qu'on fait.** Pic → attendre et vérifier que la file se vide. Écart durable → agir sur la
+destination, ou réduire le volume (échantillonnage, filtres `filter/drop_noise`).
+
+## NotificationsDAlerteEnEchec
+
+**Ce que ça veut dire.** La détection fonctionne, la TRANSMISSION non. C'est le pire état
+possible d'une plateforme d'observabilité : tous les écrans sont verts et personne n'est
+prévenu de quoi que ce soit.
+
+**Ce qu'on regarde.** `docker logs` d'Alertmanager donne la cause exacte, et elle est presque
+toujours l'une des trois : un secret absent ou vide (`read url_file: … no such file`), un nom
+impossible à résoudre (`lookup hooks.slack.com … no such host`), ou un 4xx du destinataire
+(webhook révoqué). Le label `integration` de l'alerte dit quel canal.
+
+**Ce qu'on fait.** Secret absent → le fournir dans `alertmanager/secrets/`, puis redémarrer :
+`render-config.sh` ne branche une intégration que si son secret est utilisable, et annonce au
+démarrage ce qui est actif. DNS → vérifier `ALERTMANAGER_DNS`. 4xx → renouveler le webhook.
+**Vérifier ensuite la livraison pour de bon**, sans attendre le prochain incident :
+
+```sh
+amtool --alertmanager.url=http://localhost:9093 alert add \
+  alertname=TestLivraison severity=page service_name=gateway \
+  summary="test de livraison" description="à ignorer"
+```
+
+## AlertmanagerInjoignableDepuisPrometheus
+
+**Ce que ça veut dire.** Prometheus évalue toujours ses règles mais ne parvient plus à pousser
+les alertes. Rien ne sonnera, quel que soit l'état des intégrations en aval.
+
+**Ce qu'on regarde.** *Prometheus → Status → Runtime & Build Information* → Alertmanagers
+découverts, et l'état du conteneur `alertmanager`.
+
+**Ce qu'on fait.** Redémarrer Alertmanager, ou corriger le bloc `alerting` de `prometheus.yml`.
+Pendant la panne, surveiller les règles à la main : `/alerts` dans Prometheus montre ce qui
+aurait dû partir.
+
+## ChaineAlertingVivante
+
+**Ce que ça veut dire.** Rien. Cette alerte est active en permanence, par construction, et ne
+demande aucune action — c'est une veilleuse (« dead man's switch »).
+
+**Ce qu'on regarde.** Rien non plus, tant qu'elle arrive. **C'est son SILENCE qui est le
+signal** : si le surveillant externe (OneUptime heartbeat, Healthchecks.io, moniteur « push »
+d'Uptime Kuma) ne la reçoit plus depuis dix minutes, alors Prometheus, Alertmanager ou le canal
+de notification est tombé, et plus aucune alerte réelle ne peut arriver.
+
+**Ce qu'on fait.** Câbler le surveillant une fois pour toutes en déposant son URL de battement
+de cœur dans `alertmanager/secrets/veilleuse_webhook_url`, puis traiter toute interruption
+comme une panne de la plateforme elle-même : vérifier Prometheus, Alertmanager, puis le réseau.
+
+## SGFEEnvoisWhatsAppEnEchec
+
+**Ce que ça veut dire.** Plus d'un envoi WhatsApp sur cinq échoue depuis quinze minutes. Le
+canal métier principal de SGFE ne remplit plus sa promesse : les factures, reçus, avis de
+suspension et de rétablissement n'atteignent pas les abonnés.
+
+**Ce qu'on regarde.** D'abord la passerelle, pas l'application : `GET /health` du
+`whatsapp-service`. La réponse `{"ready":false,"phase":"qr"}` signifie que la session n'est pas
+appairée — aucun service n'est « tombé », et pourtant 100 % des envois échouent. Ensuite
+*SGFE — Exploitation* → « Envois en échec par type » pour savoir quel courrier métier est
+bloqué.
+
+**Ce qu'on fait.** `phase: qr` → réappairer la session WhatsApp (scan du QR), c'est la seule
+action utile. `phase: ready` mais échecs quand même → lire les journaux du
+`notification-service` : numéro invalide, quota du fournisseur, ou message refusé. Les envois
+échoués sont rejoués automatiquement, mais rien ne partira tant que la session n'est pas liée.
+
+## SGFEAucunEnvoiWhatsAppAbouti
+
+**Ce que ça veut dire.** Des envois sont tentés depuis six heures et pas un seul n'aboutit.
+C'est le filet de sécurité de la fiche précédente : quand la totalité échoue depuis toujours,
+un taux d'échec ne bouge plus et cesse d'alerter.
+
+**Ce qu'on regarde.** Identique : `whatsapp-service` `GET /health`, puis
+`sgfe_notification_envoi_total{statut="ENVOYE"}` — la série peut ne pas exister du tout, ce qui
+est le symptôme.
+
+**Ce qu'on fait.** Identique. Prévenir l'exploitation métier : les envois en attente
+s'accumulent et repartiront tous d'un coup au rétablissement.
+
+## SGFERetriesNotificationAnormaux
+
+**Ce que ça veut dire.** Le mécanisme de reprise travaille anormalement. Il masque une panne du
+canal plutôt qu'un aléa réseau.
+
+**Ce qu'on regarde.** Croiser avec le taux d'échec : reprises hautes ET échecs hauts → panne de
+canal. Reprises hautes ET échecs bas → le canal est instable mais finit par livrer.
+
+**Ce qu'on fait.** Traiter la cause du côté de la passerelle. Ne pas augmenter le nombre de
+reprises : cela rallonge le délai de livraison sans rien réparer.
+
+## SGFEEchecsAuthentificationAnormaux
+
+**Ce que ça veut dire.** Plus de vingt échecs de connexion en cinq minutes sur le service auth
+de SGFE. Au-delà, l'hypothèse de l'erreur de saisie ne tient plus.
+
+**Ce qu'on regarde.** Les journaux du `auth-service` (`{service_name="auth-service"}` dans
+Loki) : chercher si les échecs viennent d'une adresse source unique, ou visent un compte
+unique.
+
+**Ce qu'on fait.** Source unique → bloquer l'adresse au niveau du proxy. Compte unique visé
+depuis plusieurs sources → prévenir la personne et forcer le renouvellement. Répartition
+diffuse → vérifier qu'un déploiement récent n'a pas cassé le flux d'authentification : la panne
+se déguise volontiers en attaque.
+
+## SGFEComposantSansTelemetrie
+
+**Ce que ça veut dire.** L'un des neuf composants SGFE ne pousse plus ni trace ni métrique
+depuis dix minutes. Ces composants ne sont pas *scrutés* par Prometheus, ils *poussent* en
+OTLP : il n'existe donc aucune série `up` pour eux, et sans cette règle leur silence serait
+strictement invisible.
+
+**Ce qu'on regarde.** **Compter d'abord.** Un seul composant muet → c'est lui. Tous muets à la
+fois → c'est le raccordement : le réseau `obs-edge` ou la surcouche
+`docker-compose.observability.yml`, que la pile démarre parfois sans (`docker compose up -d`
+seul ne l'applique pas).
+
+**Ce qu'on fait.** Composant seul → `docker ps` et ses journaux. Tous → redémarrer la pile avec
+les DEUX fichiers :
+`docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d`.
+
+## SGFECronsNonInstrumentes
+
+**Ce que ça veut dire.** Aucune tâche planifiée de SGFE ne déclare son succès : la série
+`sgfe_cron_last_success_timestamp_seconds` n'existe pas. Les six ordonnanceurs APScheduler
+(facturation, paiement, campagne, notification, reporting, auth) tournent sans témoin — un cron
+mort ne peut PAS être détecté, et le symptôme reste « l'absence d'une ligne de journal ».
+
+**Ce qu'on regarde.** Rien à regarder : c'est une lacune d'instrumentation, pas un incident.
+
+**Ce qu'on fait.** Faire émettre, par chaque tâche et en fin d'exécution réussie, un
+horodatage étiqueté du nom de la tâche :
+
+```
+sgfe_cron_last_success_timestamp_seconds{cron="relances_impayes"} 1757000000
+```
+
+Cette alerte s'éteint alors d'elle-même, et `SGFECronEnRetard` prend le relais.
+
+## SGFECronEnRetard
+
+**Ce que ça veut dire.** Une tâche planifiée n'a pas abouti depuis plus de 26 heures. Le seuil
+laisse deux heures de glissement à un travail quotidien.
+
+**Ce qu'on regarde.** Le nom dans l'étiquette `cron`, puis les journaux du service qui la porte.
+Chaque tâche a un effet métier observable : relances d'impayés envoyées, statistiques
+réconciliées, campagnes clôturées.
+
+**Ce qu'on fait.** Réparer l'ordonnanceur **avant** de lancer la tâche à la main : une exécution
+manuelle réussie éteint l'alerte sans corriger la cause, et masque la panne jusqu'au prochain
+cycle.
+
+## Trace → profil
+
+Le bouton « Profiles for this span » de Grafana a deux modes, et un seul est câblé ici.
+
+Le **flame graph embarqué** dans le détail d'un span exige que le span porte l'attribut
+`pyroscope.profile.id` — posé par le processeur de span `pyroscope-otel`, que le SDK
+`pyroscope-io` seul NE POSE PAS. Tant qu'il n'est pas ajouté côté applicatif, ce mode reste
+indisponible.
+
+Le **lien vers la source de données** est, lui, actif : il ouvre le profil du MÊME SERVICE sur
+la fenêtre de temps du span (`tracesToProfiles.tags`, voir
+`grafana/provisioning/datasources/datasources.yaml`). C'est moins précis qu'un profil par span,
+et c'est honnête : mieux vaut un lien qui tient sa promesse qu'un bouton qui ouvre un profil
+sans rapport.

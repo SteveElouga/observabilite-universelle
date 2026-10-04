@@ -16,4 +16,10 @@ storage:
     local: { path: /var/tempo/blocks }
     wal:   { path: /var/tempo/wal }
 compactor:
-  compaction: { block_retention: 360h }          # 15 jours de traces (§7.3)
+  # 30 jours de traces (§7.3). Auparavant 360h (15 j) : trop court pour rejouer un
+  # incident du mois précédent et pour une période d'observation SOC 2 Type II, alors
+  # que la politique de conservation du projet consommateur est de 90 j pour les
+  # journaux. Compromis assumé et documenté (README.md, « Conservation par signal ») :
+  # les traces coûtent bien plus cher au stockage que les journaux, 30 j couvrent le cycle
+  # de facturation mensuel, les journaux (Loki, 90 j) restent la mémoire longue.
+  compaction: { block_retention: 720h }

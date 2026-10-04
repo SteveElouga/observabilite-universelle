@@ -7,13 +7,56 @@ discovery.docker "containers" {
 }
 
 // Sans relabel, les flux Loki n'auraient aucun sélecteur exploitable :
-// on promeut le nom du conteneur en label `container` (faible cardinalité).
+// on promeut le nom du conteneur en label `container` (faible cardinalité), le nom du
+// SERVICE Compose en `service_name` et le PROJET Compose en `compose_project`.
 discovery.relabel "containers" {
   targets = discovery.docker.containers.targets
+
+  // ── 1. Périmètre de collecte ────────────────────────────────────────────────────────
+  // `discovery.docker` voit TOUS les conteneurs du démon, pas seulement ceux qu'on
+  // observe : sur le poste de recette, 84 conteneurs finissaient dans un Loki mono-tenant
+  // et sans authentification, dont ceux d'autres projets clients (mélange de données, et
+  // le bruit rendait `{service_name=...}` inexploitable).
+  //
+  // `LOGS_COMPOSE_PROJECTS` est une expression régulière ANCRÉE (Prometheus ancre toujours
+  // `regex`) comparée au projet Compose du conteneur. Valeur par défaut `.+` : on ne garde
+  // que les conteneurs appartenant à un projet Compose — un `docker run` isolé n'est plus
+  // ingéré. Poser par exemple `sgfe-.*|observability` pour restreindre à deux projets.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = coalesce(sys.env("LOGS_COMPOSE_PROJECTS"), ".+")
+    action        = "keep"
+  }
+
+  // ── 2. Nom du conteneur → `container` ───────────────────────────────────────────────
   rule {
     source_labels = ["__meta_docker_container_name"]
     regex         = "/(.*)"
     target_label  = "container"
+  }
+
+  // ── 3. Service Compose → `service_name` : LA corrélation trace → journaux ───────────
+  // Sans cette règle, le flux n'a pas de label `service_name` et Loki en DÉRIVE un
+  // lui-même à partir du nom de conteneur (`discover_service_name`) : on obtenait
+  // `service_name="sgfe-backend-gateway-1"` alors que Tempo et Prometheus portent
+  // `service_name="gateway"` (OTEL_SERVICE_NAME). Le bouton « logs de ce span » de Grafana
+  // interroge `{service_name="gateway"}` (tag par défaut `service.name` → `service_name`,
+  // voir grafana/provisioning/datasources/datasources.yaml) et ne rendait donc AUCUN flux.
+  //
+  // Le nom du service Compose est le bon pivot : par convention de ce socle, un composant
+  // nomme son service Compose comme son `OTEL_SERVICE_NAME` (vérifié sur les 9 composants
+  // du projet consommateur : `gateway`, `auth-service`, `abonne-service`, …).
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+  }
+
+  // ── 4. Projet Compose → `compose_project` ───────────────────────────────────────────
+  // Deux projets peuvent nommer un service pareil (`postgres`, `redis`…) : ce label les
+  // sépare sans toucher à `service_name`, qui doit rester identique à celui d'OTel.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "compose_project"
   }
 }
 
@@ -36,9 +79,21 @@ faro.receiver "web" {
 }
 
 // Les événements RUM de Faro n'ont pas les labels `container`/`service_name` des logs Docker.
-// On leur pose un label `source="faro"` : ils deviennent filtrables dans Loki via {source="faro"}
-// (et cela garantit au moins un label, un flux sans label pouvant être rejeté).
+// On leur pose `source="faro"` (filtrable via {source="faro"}) ET, surtout, le `service_name`
+// de l'application : sans lui, Loki dérivait `service_name="unknown_service"` pour 786
+// lignes/heure, alors que chaque ligne portait déjà `app_name=sgfe-frontend` — aucun filtrage
+// par application n'était possible, et la corrélation trace → journaux du front était morte.
+//
+// Le récepteur Faro écrit ses lignes en logfmt (`log_format` par défaut) ; les métadonnées
+// d'application y sont préfixées `app_` (`App.KeyVal()` + `MergeKeyValWithPrefix(…, "app_")`
+// dans Alloy), d'où `app_name` / `app_namespace` / `app_environment`.
 loki.process "faro" {
+  stage.logfmt {
+    mapping = { "app_name" = "", "app_namespace" = "" }
+  }
+  stage.labels {
+    values = { service_name = "app_name", service_namespace = "app_namespace" }
+  }
   stage.static_labels {
     values = { source = "faro" }
   }

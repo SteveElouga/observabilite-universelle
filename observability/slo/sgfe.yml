@@ -1,0 +1,67 @@
+# slo/sgfe.yml — SLO-as-code du CONSOMMATEUR (Sloth, §4.12 / §10.6)
+#
+# Génération des règles multi-burn-rate + alertes :
+#   sloth generate -i slo/sgfe.yml -o prometheus/rules/slo-sgfe.yml
+# (slo-sgfe.yml est un ARTEFACT GÉNÉRÉ — le régénérer, ne pas l'éditer à la main.)
+#
+# Pourquoi ce fichier existe : le seul SLO de la plateforme portait sur `units-service`,
+# l'application de DÉMONSTRATION. Les tableaux « SLO et budget d'erreur » affichaient donc la
+# conformité d'un logiciel que personne n'exploite, pendant que SGFE n'avait aucun objectif
+# mesuré. Trois promesses, choisies pour être vérifiables avec les séries qui existent
+# RÉELLEMENT aujourd'hui (spanmetrics du Collector + compteurs métier des services).
+version: prometheus/v1
+service: sgfe
+slos:
+  # 1. La passerelle répond. Objectif volontairement plus modeste que le 99,9 % de la démo :
+  #    un objectif qu'on ne tient pas est un objectif qu'on cesse de regarder.
+  - name: gateway-disponibilite
+    objective: 99.5                      # → budget d'erreur : ~3 h 36 / 30 jours
+    description: >-
+      Part des opérations de la passerelle GraphQL qui n'échouent pas. SLI calculé sur 100 %
+      du trafic (spanmetrics, avant échantillonnage).
+    sli:
+      events:
+        error_query: sum(rate(traces_span_metrics_calls_total{service_name="gateway",status_code="STATUS_CODE_ERROR"}[{{.window}}]))
+        total_query: sum(rate(traces_span_metrics_calls_total{service_name="gateway"}[{{.window}}]))
+    alerting:
+      name: SGFEGatewayDisponibilite
+      labels: { service_name: gateway }
+      page_alert:   { labels: { severity: page,   service_name: gateway } }
+      ticket_alert: { labels: { severity: ticket, service_name: gateway } }
+
+  # 2. La passerelle répond VITE. « Mauvais » = au-delà de 2 s, la borne du budget de latence
+  #    de lecture ENF-01. `le="2000"` existe bien dans les buckets spanmetrics (vérifié :
+  #    2, 4, 6, 8, 10, 50, 100, 200, 400, 800, 1000, 1400, 2000, 5000, 10000, 15000, +Inf).
+  - name: gateway-latence
+    objective: 99
+    description: >-
+      Part des opérations de la passerelle servies en moins de 2 s (budget ENF-01).
+    sli:
+      events:
+        error_query: |
+          sum(rate(traces_span_metrics_duration_milliseconds_bucket{service_name="gateway",le="+Inf"}[{{.window}}]))
+          -
+          sum(rate(traces_span_metrics_duration_milliseconds_bucket{service_name="gateway",le="2000"}[{{.window}}]))
+        total_query: sum(rate(traces_span_metrics_duration_milliseconds_bucket{service_name="gateway",le="+Inf"}[{{.window}}]))
+    alerting:
+      name: SGFEGatewayLatence
+      labels: { service_name: gateway }
+      page_alert:   { labels: { severity: page,   service_name: gateway } }
+      ticket_alert: { labels: { severity: ticket, service_name: gateway } }
+
+  # 3. Les notifications ARRIVENT. C'est la promesse métier centrale du produit, et celle qui
+  #    était tenue à 0 % pendant deux jours sans que rien ne le dise. 95 % et non 99 % :
+  #    WhatsApp est un tiers, un pourcentage d'échec structurel est inévitable.
+  - name: whatsapp-livraison
+    objective: 95
+    description: >-
+      Part des envois WhatsApp qui aboutissent (facture, reçu, suspension, rétablissement).
+    sli:
+      events:
+        error_query: sum(rate(sgfe_notification_envoi_total{statut="ECHEC"}[{{.window}}]))
+        total_query: sum(rate(sgfe_notification_envoi_total[{{.window}}]))
+    alerting:
+      name: SGFEWhatsAppLivraison
+      labels: { service_name: notification-service }
+      page_alert:   { labels: { severity: page,   service_name: notification-service } }
+      ticket_alert: { labels: { severity: ticket, service_name: notification-service } }

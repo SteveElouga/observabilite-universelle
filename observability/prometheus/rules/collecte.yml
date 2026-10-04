@@ -1,0 +1,84 @@
+# prometheus/rules/collecte.yml — la plateforme se surveille ELLE-MÊME (§10.4, écran 12).
+#
+# Ajouté le 14/09/2026 après deux constats jumeaux : le Collector jetait des lots entiers de
+# métriques sans que personne ne le sache (133 386 points perdus en 6 h), et Alertmanager
+# échouait 1 447 notifications en 72 h sans qu'aucune règle ne regarde ce compteur. Une
+# plateforme d'observabilité qui n'observe pas sa propre chaîne ment par omission : les
+# tableaux de bord restent verts alors que les données manquent et que les alertes n'arrivent
+# nulle part.
+groups:
+  - name: chaine-de-collecte
+    rules:
+      # Le Collector compte lui-même ce qu'il n'a pas réussi à exporter. Tout point perdu est
+      # un trou définitif : les compteurs cumulés se recalent au lot suivant, mais les
+      # histogrammes de latence de la fenêtre perdue ne reviennent jamais.
+      - alert: TelemetrieMetriquesPerdues
+        expr: sum by (exporter) (rate(otelcol_exporter_send_failed_metric_points[5m])) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Collector : l'exportateur {{ $labels.exporter }} jette des métriques"
+          description: >-
+            Des points de métrique sont rejetés depuis dix minutes. Cause la plus fréquente :
+            le backend de destination met plus longtemps que `timeout` à accepter un lot
+            (saturation disque ou CPU de l'hôte). Vérifier d'abord le remplissage disque, puis
+            la taille de la file d'export (`otelcol_exporter_queue_size`).
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#telemetriemetriquesperdues"
+
+      - alert: TelemetrieTracesPerdues
+        expr: sum by (exporter) (rate(otelcol_exporter_send_failed_spans[5m])) > 0
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Collector : l'exportateur {{ $labels.exporter }} jette des spans"
+          description: >-
+            Des spans n'atteignent pas leur backend depuis dix minutes. Les traces manquantes
+            rendent la corrélation trompeuse : on croit qu'une requête n'a pas eu lieu.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#telemetrietracesperdues"
+
+      # La file d'export est le dernier tampon avant la perte : à 80 % elle prévient, à 100 %
+      # elle jette. Le seuil est là pour agir AVANT le rejet, pas pour le constater.
+      - alert: FileExportCollectorPresqueSaturee
+        expr: |
+          (otelcol_exporter_queue_size / otelcol_exporter_queue_capacity) > 0.8
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Collector : file d'export {{ $labels.exporter }} à {{ $value | humanizePercentage }}"
+          description: >-
+            Le Collector accumule plus vite qu'il n'exporte. Au plein, les lots suivants sont
+            jetés. Agir sur la destination (disque, CPU) ou augmenter `remote_write_queue`.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#fileexportcollectorpresquesaturee"
+
+  - name: chaine-d-alerte
+    rules:
+      # L'ALERTE QUI SURVEILLE LES ALERTES. Sans elle, une intégration cassée est invisible :
+      # c'est exactement ce qui s'est produit avec le webhook OneUptime absent.
+      - alert: NotificationsDAlerteEnEchec
+        expr: |
+          sum by (integration) (rate(alertmanager_notifications_failed_total[10m])) > 0
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "Alertmanager : l'intégration {{ $labels.integration }} n'arrive pas à notifier"
+          description: >-
+            Des notifications échouent depuis dix minutes : la détection fonctionne, la
+            transmission non. Lire `docker logs` d'Alertmanager pour la cause exacte (secret
+            absent, DNS, 4xx du destinataire) et vérifier que le canal de secours (e-mail)
+            reste, lui, opérationnel.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#notificationsdalerteenechec"
+
+      # Prometheus ne parvient plus à POUSSER ses alertes vers Alertmanager : rien ne sonnera,
+      # quel que soit l'état des intégrations en aval.
+      - alert: AlertmanagerInjoignableDepuisPrometheus
+        expr: |
+          rate(prometheus_notifications_errors_total[5m]) > 0
+          or (prometheus_notifications_alertmanagers_discovered < 1)
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Prometheus ne joint plus Alertmanager"
+          description: >-
+            Les alertes évaluées ne sont plus transmises. Vérifier le bloc `alerting` de
+            prometheus.yml et l'état du conteneur alertmanager.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#alertmanagerinjoignabledepuisprometheus"

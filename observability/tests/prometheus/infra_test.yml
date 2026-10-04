@@ -1,0 +1,78 @@
+# tests/prometheus/infra_test.yml — `promtool test rules`
+# Prouve la correction C-354 : les systèmes de fichiers virtuels de la VM Docker Desktop ne
+# doivent plus produire d'alerte disque, et un vrai volume plein doit toujours en produire une.
+rule_files:
+  - ../../prometheus/rules/infra.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ① `/oldroot`, racine erofs EN LECTURE SEULE de la VM Docker Desktop, à 100,0 %.
+  #    Avant correction : `DisquePresquePlein` (severity=page) en permanence.
+  - interval: 1m
+    name: "un systeme de fichiers erofs en lecture seule ne declenche aucune alerte disque"
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="hote:9100",job="node",device="/dev/root",fstype="erofs",mountpoint="/oldroot"}'
+        values: "0+0x20"
+      - series: 'node_filesystem_size_bytes{instance="hote:9100",job="node",device="/dev/root",fstype="erofs",mountpoint="/oldroot"}'
+        values: "1000000000+0x20"
+      - series: 'node_filesystem_readonly{instance="hote:9100",job="node",device="/dev/root",fstype="erofs",mountpoint="/oldroot"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DisquePresquePlein
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: DisqueBientotPlein
+        exp_alerts: []
+
+  # ② Les montages virtiofs/fakeowner de Docker Desktop reflètent le disque du Mac : ils
+  #    faisaient sonner cinq fois le même remplissage sous des points de montage différents.
+  - interval: 1m
+    name: "les montages virtiofs et fakeowner de la VM sont ignores"
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="hote:9100",job="node",device="virtiofs0",fstype="virtiofs.virtiofs0",mountpoint="/run/host_virtiofs/Users"}'
+        values: "31000000+0x20"
+      - series: 'node_filesystem_size_bytes{instance="hote:9100",job="node",device="virtiofs0",fstype="virtiofs.virtiofs0",mountpoint="/run/host_virtiofs/Users"}'
+        values: "1000000000+0x20"
+      - series: 'node_filesystem_avail_bytes{instance="hote:9100",job="node",device="/run/host_virtiofs/Users",fstype="fakeowner",mountpoint="/run/host_mark/Users"}'
+        values: "31000000+0x20"
+      - series: 'node_filesystem_size_bytes{instance="hote:9100",job="node",device="/run/host_virtiofs/Users",fstype="fakeowner",mountpoint="/run/host_mark/Users"}'
+        values: "1000000000+0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DisquePresquePlein
+        exp_alerts: []
+
+  # ③ Le vrai volume de données (ext4) reste surveillé : la correction ne doit pas rendre
+  #    l'alerte aveugle, sinon on aurait remplacé du bruit par du silence.
+  - interval: 1m
+    name: "un volume ext4 reellement plein declenche toujours les deux seuils"
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="hote:9100",job="node",device="/dev/vda1",fstype="ext4",mountpoint="/var/lib/docker"}'
+        values: "50000000+0x20"
+      - series: 'node_filesystem_size_bytes{instance="hote:9100",job="node",device="/dev/vda1",fstype="ext4",mountpoint="/var/lib/docker"}'
+        values: "1000000000+0x20"
+      - series: 'node_filesystem_readonly{instance="hote:9100",job="node",device="/dev/vda1",fstype="ext4",mountpoint="/var/lib/docker"}'
+        values: "0+0x20"
+    promql_expr_test:
+      - expr: instance:systeme_fichiers_rempli:ratio
+        eval_time: 15m
+        exp_samples:
+          - labels: 'instance:systeme_fichiers_rempli:ratio{device="/dev/vda1",fstype="ext4",instance="hote:9100",job="node",mountpoint="/var/lib/docker"}'
+            value: 95
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DisquePresquePlein
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              instance: "hote:9100"
+              job: node
+              device: /dev/vda1
+              fstype: ext4
+              mountpoint: /var/lib/docker
+            exp_annotations:
+              summary: "hote:9100 : /var/lib/docker rempli à 95.0 %"
+              description: "Intervention immédiate. Au-delà de 95 %, PostgreSQL refuse les écritures et la plateforme perd ses propres données d'observation — on devient aveugle pendant la panne."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#disquepresqueplein"

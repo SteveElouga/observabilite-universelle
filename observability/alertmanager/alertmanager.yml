@@ -1,55 +1,105 @@
-# alertmanager/alertmanager.yml — routage des alertes (§10.6)
-# Astreinte (§4.11, phase 4) : les alertes severity=page partent vers Slack ET vers OneUptime
-# (intégration Alertmanager entrante) pour la garde, l'escalade et les appels. OneUptime est
-# hébergé HORS infra (voir observability/oneuptime/README.md) ; son URL de webhook vit dans un
-# fichier monté, hors Git (secrets/oneuptime_webhook_url), comme le webhook Slack.
+# alertmanager/alertmanager.yml — SOCLE de routage des alertes (§10.6)
+#
+# ⚠ CE FICHIER N'EST PAS CELUI QUE LIT ALERTMANAGER. `render-config.sh` en produit une
+#   copie enrichie (par défaut /tmp/alertmanager.yml) où sont insérées les intégrations
+#   dont le secret est RÉELLEMENT présent : webhook Slack, webhook OneUptime (astreinte),
+#   e-mail SMTP de secours, veilleuse de bout en bout. AUCUNE n'est écrite ici en dur,
+#   Slack comprise : la règle vaut pour tous les canaux ou elle ne vaut pour aucun.
+#
+#   Pourquoi ce détour, constaté le 11/09/2026 : `page-oncall` déclarait en dur
+#   `webhook_configs.url_file: …/oneuptime_webhook_url`, un fichier que personne n'avait
+#   créé. Chaque alerte `severity=page` produisait alors
+#     « notify retry canceled due to unrecoverable error after 1 attempts:
+#       read url_file: … no such file or directory »
+#   — 1 447 échecs en 72 h, aucune notification livrée. Une intégration dont le secret
+#   manque ne doit pas figurer dans la configuration active : c'est la cause racine, et
+#   c'est exactement ce que le rendu conditionnel élimine.
+#
+# Astreinte (§4.11, phase 4) : les alertes severity=page partent vers Slack, vers l'e-mail
+# de secours ET vers OneUptime (garde, escalade, appel) quand il est configuré. OneUptime
+# est hébergé HORS infra (voir observability/oneuptime/README.md).
 route:
   receiver: slack
   group_by: [alertname, service_name]
   routes:
+    # VEILLEUSE (« dead man's switch ») : une alerte volontairement TOUJOURS active
+    # (prometheus/rules/veilleuse.yml). Un surveillant externe (OneUptime heartbeat,
+    # Healthchecks.io, Uptime Kuma « push ») doit la recevoir toutes les 5 minutes ; son
+    # SILENCE prouve que la chaîne Prometheus → Alertmanager → notification est morte.
+    # Sans elle, une panne d'alerting est indétectable — c'est précisément ce qui s'est
+    # produit ici pendant plusieurs jours.
+    - matchers: ['severity="veilleuse"']
+      receiver: veilleuse
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 5m
     - { matchers: ['severity="page"'],   receiver: page-oncall, repeat_interval: 1h }
     - { matchers: ['severity="ticket"'], receiver: slack,       repeat_interval: 24h }
-inhibit_rules:              # un "page" actif fait taire les "ticket" du même service
-  - source_matchers: ['severity="page"']
-    target_matchers: ['severity="ticket"']
-    equal: [service_name]
-receivers:
-  - name: slack
-    slack_configs:
-      # ⚠ Alertmanager ne substitue PAS les variables d'environnement dans sa config :
-      # le webhook vit dans un fichier monté, HORS GIT (voir secrets/ et README).
-      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
-        channel: "#alertes"
-        send_resolved: true
-        # GABARIT EXPLICITE, et c'est nécessaire : le gabarit `text` par défaut d'Alertmanager
-        # est une chaîne VIDE. Sans ces trois lignes, Slack reçoit un titre et rien d'autre —
-        # constaté en recette, l'astreinte lisait un nom d'alerte sans résumé ni marche à suivre.
-        title: '{{ .Status | toUpper }} · {{ .CommonLabels.alertname }}{{ if .CommonLabels.service_name }} · {{ .CommonLabels.service_name }}{{ end }}'
-        text: |-
-          {{ range .Alerts -}}
-          *{{ .Annotations.summary }}*
-          {{ .Annotations.description }}
-          {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|Que faire — runbook>{{ end }}
-          {{ end }}
+    # DETTE D'INSTRUMENTATION (ajoutée le 15/09/2026). Deux règles déclarent volontairement un
+    # trou de surveillance et sont donc vraies EN PERMANENCE jusqu'à ce que le dépôt observé
+    # les comble : `SauvegardeJamaisDeclaree` et `SGFECronsNonInstrumentes`. Les laisser en
+    # `ticket` les faisait repartir dans #alertes toutes les 24 h — le bruit récurrent que
+    # C-354 venait justement de nettoyer, dans le canal qu'on venait de nettoyer.
+    #
+    # On ne les supprime pas pour autant : une surveillance qui ne peut pas se déclencher
+    # rassure à tort. On les sort du canal d'incident, et on les répète une fois par semaine
+    # (168 h, multiple du `group_interval` comme la documentation Alertmanager le demande).
+    # Chacune porte une annotation `suivi` avec le constat d'origine et une échéance de revue.
+    - matchers: ['severity="dette"']
+      receiver: dette-technique
+      group_interval: 6h
+      repeat_interval: 168h
 
-  # severity=page : double notification. Slack pour la visibilité de l'équipe, et OneUptime
-  # pour la garde (rotation d'astreinte, escalade, appel téléphonique). Voir oneuptime/README.md.
+inhibit_rules:
+  # Un "page" actif fait taire les "ticket" DU MÊME SERVICE.
+  #
+  # `service_name!=""` DES DEUX CÔTÉS, et c'est la correction du 14/09/2026. La
+  # documentation Alertmanager est explicite : « Semantically, a missing label and a label
+  # with an empty value are the same thing ». Sans ce garde-fou, une alerte `page` SANS
+  # service (DisquePresquePlein, ProbeDown, CibleInjoignable…) « égalait » tous les tickets
+  # sans service et les inhibait EN BLOC : `HighLatencyP99`, `BudgetLatenceDepasse`,
+  # `ProbeSlow` étaient éteints par une alerte disque permanente. Le bruit masquait le
+  # signal, ce qui est le contraire de ce qu'une inhibition doit faire.
+  - source_matchers: ['severity="page"', 'service_name!=""']
+    target_matchers: ['severity="ticket"', 'service_name!=""']
+    equal: [service_name]
+
+receivers:
+  # ⚠ Ces trois récepteurs sont VIDES dans le socle, et c'est délibéré. Chaque intégration
+  # est écrite par `render-config.sh` à l'ancre correspondante, et seulement si son secret
+  # existe et n'est pas vide. Un récepteur sans intégration est une configuration VALIDE qui
+  # n'envoie rien : c'est bruyamment journalisé au démarrage, et infiniment préférable à une
+  # intégration déclarée dont chaque notification échoue en silence.
+  #
+  # Slack comprise : Alertmanager ne substitue pas les variables d'environnement dans sa
+  # configuration, son webhook vit donc dans un fichier monté hors Git
+  # (secrets/slack_webhook_url) — exactement comme les autres, et soumis à la même règle.
+  # Le gabarit `title`/`text` est posé par le script, en un seul endroit pour les deux
+  # récepteurs qui l'utilisent : le gabarit `text` par défaut d'Alertmanager est une chaîne
+  # VIDE, et l'astreinte lisait un nom d'alerte sans résumé ni marche à suivre.
+
+  # Récepteur par défaut, et destinataire des alertes `severity=ticket`.
+  - name: slack
+    # >>> integrations-optionnelles: slack (ANCRE DE RENDU — ne pas retirer, ne pas indenter)
+
+  # severity=page : notification multiple. Slack pour la visibilité de l'équipe, e-mail pour
+  # un canal indépendant de la résolution DNS de hooks.slack.com (elle a échoué en recette :
+  # « lookup hooks.slack.com on 127.0.0.11:53: no such host »), et OneUptime pour la garde
+  # (rotation d'astreinte, escalade, appel téléphonique). Voir oneuptime/README.md.
   - name: page-oncall
-    slack_configs:
-      - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
-        channel: "#alertes"
-        send_resolved: true
-        # GABARIT EXPLICITE, et c'est nécessaire : le gabarit `text` par défaut d'Alertmanager
-        # est une chaîne VIDE. Sans ces trois lignes, Slack reçoit un titre et rien d'autre —
-        # constaté en recette, l'astreinte lisait un nom d'alerte sans résumé ni marche à suivre.
-        title: '{{ .Status | toUpper }} · {{ .CommonLabels.alertname }}{{ if .CommonLabels.service_name }} · {{ .CommonLabels.service_name }}{{ end }}'
-        text: |-
-          {{ range .Alerts -}}
-          *{{ .Annotations.summary }}*
-          {{ .Annotations.description }}
-          {{ if .Annotations.runbook_url }}<{{ .Annotations.runbook_url }}|Que faire — runbook>{{ end }}
-          {{ end }}
-    webhook_configs:
-      # OneUptime, intégration Alertmanager entrante (url_file : Alertmanager >= 0.26).
-      - url_file: /etc/alertmanager/secrets/oneuptime_webhook_url
-        send_resolved: true
+    # >>> integrations-optionnelles: page-oncall (ANCRE DE RENDU — ne pas retirer, ne pas indenter)
+
+  # Dette d'instrumentation : visible, jamais confondue avec un incident. `render-config.sh`
+  # y insère un Slack pointant `secrets/slack_webhook_dette_url` si ce secret existe, et
+  # retombe sinon sur le webhook principal avec un canal différent — étant entendu qu'un
+  # webhook créé par une app Slack est lié à son canal et ignore ce champ (seuls les webhooks
+  # « legacy custom integration » l'honorent, api.slack.com/legacy/custom-integrations/
+  # messaging/webhooks). Pour séparer réellement les canaux : fournir le secret dédié.
+  - name: dette-technique
+    # >>> integrations-optionnelles: dette-technique (ANCRE DE RENDU — ne pas retirer, ne pas indenter)
+
+  # Destinataire de la veilleuse. Tant qu'aucun `secrets/veilleuse_webhook_url` n'est fourni,
+  # ce récepteur n'envoie rien ; dès qu'il l'est, `render-config.sh` y insère le webhook de
+  # battement de cœur.
+  - name: veilleuse
+    # >>> integrations-optionnelles: veilleuse (ANCRE DE RENDU — ne pas retirer, ne pas indenter)
