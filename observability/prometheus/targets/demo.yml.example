@@ -4,10 +4,12 @@
 #   · compose : docker compose --profile demo up -d   (le service `demo-targets` écrit
 #               demo.local.yml, ignoré par Git)
 #   · à la main : cp prometheus/targets/demo.yml.example prometheus/targets/demo.local.yml
-#   · image   : DEMO_TARGETS=true (pas de dépôt Git dans l'image, l'entrypoint écrit demo.yml)
+#   · image   : aucune — depuis le 04/10/2026 la démonstration n'entre plus dans l'image
+#               (.dockerignore), qui ne doit rien porter de propre à ce dépôt.
 #
 # `demo.yml` est le fichier VERSIONNÉ, il vaut « [] » et doit le rester : y recopier les cibles
 # laissait le dépôt sale après une démonstration, et un `git add -A` distrait les remettait en
-# dur dans Git. Le job `blackbox-demo` lit le motif `demo*.yml`, donc les deux fichiers.
+# dur dans Git. Le job `blackbox-demo` (prometheus/scrape.d/demo.yml) lit le motif
+# `demo*.yml`, donc les deux fichiers.
 - targets: ["http://units-service:8000/sante/", "http://units-webapp:8080/"]
   labels: { role: demo }

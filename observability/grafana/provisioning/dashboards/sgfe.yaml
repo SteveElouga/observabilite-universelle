@@ -1,0 +1,20 @@
+# grafana/provisioning/dashboards/sgfe.yaml — dossier « SGFE », PROPRE à ce consommateur.
+#
+# Séparé de provider.yaml le 04/10/2026 pour que l'image publiée reste neutre : .dockerignore
+# écarte ce fichier et le répertoire sgfe/ (motif `**/*sgfe*`), le compose les monte toujours.
+#
+# Ces écrans existent parce que les écrans génériques ne peuvent pas deviner les compteurs du
+# consommateur : le dashboard « Métier » du socle interroge une convention `metier_*` qu'aucun
+# composant SGFE n'émet (ils émettent `sgfe_*`), et restait donc vide.
+apiVersion: 1
+providers:
+  - name: sgfe
+    orgId: 1
+    folder: SGFE
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards/sgfe
+      foldersFromFilesStructure: false

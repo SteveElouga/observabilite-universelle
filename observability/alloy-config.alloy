@@ -21,7 +21,7 @@ discovery.relabel "containers" {
   // `LOGS_COMPOSE_PROJECTS` est une expression régulière ANCRÉE (Prometheus ancre toujours
   // `regex`) comparée au projet Compose du conteneur. Valeur par défaut `.+` : on ne garde
   // que les conteneurs appartenant à un projet Compose — un `docker run` isolé n'est plus
-  // ingéré. Poser par exemple `sgfe-.*|observability` pour restreindre à deux projets.
+  // ingéré. Poser par exemple `monprojet-.*|observability` pour restreindre à deux projets.
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
     regex         = coalesce(sys.env("LOGS_COMPOSE_PROJECTS"), ".+")
@@ -38,7 +38,7 @@ discovery.relabel "containers" {
   // ── 3. Service Compose → `service_name` : LA corrélation trace → journaux ───────────
   // Sans cette règle, le flux n'a pas de label `service_name` et Loki en DÉRIVE un
   // lui-même à partir du nom de conteneur (`discover_service_name`) : on obtenait
-  // `service_name="sgfe-backend-gateway-1"` alors que Tempo et Prometheus portent
+  // `service_name="<projet>-backend-gateway-1"` alors que Tempo et Prometheus portent
   // `service_name="gateway"` (OTEL_SERVICE_NAME). Le bouton « logs de ce span » de Grafana
   // interroge `{service_name="gateway"}` (tag par défaut `service.name` → `service_name`,
   // voir grafana/provisioning/datasources/datasources.yaml) et ne rendait donc AUCUN flux.
@@ -81,7 +81,7 @@ faro.receiver "web" {
 // Les événements RUM de Faro n'ont pas les labels `container`/`service_name` des logs Docker.
 // On leur pose `source="faro"` (filtrable via {source="faro"}) ET, surtout, le `service_name`
 // de l'application : sans lui, Loki dérivait `service_name="unknown_service"` pour 786
-// lignes/heure, alors que chaque ligne portait déjà `app_name=sgfe-frontend` — aucun filtrage
+// lignes/heure, alors que chaque ligne portait déjà `app_name=<projet>-frontend` — aucun filtrage
 // par application n'était possible, et la corrélation trace → journaux du front était morte.
 //
 // Le récepteur Faro écrit ses lignes en logfmt (`log_format` par défaut) ; les métadonnées

@@ -51,12 +51,12 @@ processors:
       span:
         - 'attributes["http.route"] == "/health/"'    # adapter à vos routes
         - 'attributes["http.route"] == "/ready/"'
-  # Masquage revu le 08/09/2026 après audit réel d'un projet client (SGFE-backend, Python,
+  # Masquage revu le 08/09/2026 après audit réel d'un projet client (backend Python,
   # auto-instrumentation OTel pure : aucun `set_attribute` applicatif, aucune variable
   # OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_* définie nulle part → aucun en-tête HTTP n'est
   # aujourd'hui capturé en attribut de span, et aucun PII (email/téléphone/nom) n'y est mis ;
   # l'identité (`x-user-id`/`x-user-name`/`x-user-role`) ne transite qu'en métadonnées gRPC
-  # internes vers l'audit applicatif, jamais vers un span). Rien à masquer côté SGFE aujourd'hui,
+  # internes vers l'audit applicatif, jamais vers un span). Rien à masquer chez lui aujourd'hui,
   # mais ce Collector est partagé entre plusieurs projets clients (§ « obs-edge ») : les règles
   # ci-dessous sont donc une défense en profondeur pour tout projet qui activerait la capture
   # d'en-têtes (ou dont le SDK/langage la capture par défaut), pas une réaction à un incident réel.

@@ -10,6 +10,7 @@ vérifie ce que le binaire répond.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -205,6 +206,55 @@ class TestsUnitairesDesReglesPrometheus(unittest.TestCase):
         ])
         self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
         self.assertIn("SUCCESS", resultat.stdout)
+
+
+@BESOIN_DOCKER
+class NeutraliteDeLImage(unittest.TestCase):
+    """L'image publiée est universelle : elle ne nomme aucun projet consommateur.
+
+    Jusqu'à la 1.1.7, la préprod d'un consommateur affichait un dossier Grafana, des alertes et
+    des jobs Prometheus au nom d'un AUTRE. On ne relit pas les sources, on rejoue la copie :
+    les `COPY` locaux du vrai Dockerfile, sur une base minimale, avec le vrai `.dockerignore` —
+    c'est lui seul qui décide de ce qui entre, et c'est lui qu'il faut prendre en défaut.
+    """
+
+    # Noms des consommateurs connus. Ajouter ici tout nouveau projet qui tire l'image.
+    CONSOMMATEURS = "sgfe|formuloo"
+
+    def test_aucun_fichier_embarque_ne_nomme_un_consommateur(self) -> None:
+        dockerfile = (RACINE / "Dockerfile").read_text(encoding="utf-8")
+        copies = re.findall(r"^COPY\s+(?!--)(\S+)\s+(\S+)\s*$", dockerfile, re.MULTILINE)
+        self.assertGreater(len(copies), 10, "les COPY du Dockerfile n'ont pas été relevés")
+        # La moitié qui rend la preuve possible : les sources copiées CONTIENNENT ces noms, donc
+        # une image propre ne l'est que par l'exclusion, pas par hasard.
+        self.assertTrue((RACINE / "prometheus" / "rules" / "sgfe.yml").is_file())
+
+        with tempfile.TemporaryDirectory() as dossier:
+            gabarit = Path(dossier) / "Dockerfile"
+            gabarit.write_text(
+                "FROM busybox:1.37\n" + "".join(f"COPY {src} {dst}\n" for src, dst in copies),
+                encoding="utf-8",
+            )
+            construction = executer(["docker", "build", "-q", "-f", str(gabarit), str(RACINE)])
+        self.assertEqual(construction.returncode, 0, construction.stdout + construction.stderr)
+        image = construction.stdout.strip()
+        self.addCleanup(executer, ["docker", "rmi", "-f", image])
+
+        def lancer(commande: str) -> str:
+            resultat = executer(["docker", "run", "--rm", image, "sh", "-c", commande])
+            return resultat.stdout.strip()
+
+        # Garde contre un succès à vide : la configuration doit bien être là.
+        self.assertEqual(lancer("test -f /etc/prometheus/prometheus.yml && echo ok"), "ok")
+        self.assertEqual(
+            lancer(f"grep -rliE '{self.CONSOMMATEURS}' /etc /usr/local/bin"), "",
+            "des fichiers embarqués nomment un projet consommateur",
+        )
+        self.assertEqual(
+            lancer("grep -rlE 'job_name: *blackbox-demo' /etc; ls /etc/prometheus/targets | grep demo"),
+            "",
+            "la démonstration de ce dépôt est entrée dans l'image",
+        )
 
 
 def load_tests(

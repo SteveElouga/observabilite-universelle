@@ -20,7 +20,7 @@
 # container irrespective of the exit code but stops restarting when the service is stopped or
 # removed » (documentation Compose, docs.docker.com/reference/compose-file/services/) relance
 # après une mort accidentelle ET au redémarrage du démon, mais respecte un `docker compose
-# stop` explicite. Les trois services one-shot (`demo-targets`, `sgfe-targets`,
+# stop` explicite. Les trois services one-shot (`demo-targets`, `application-targets`,
 # `glitchtip-migrate`) gardent `restart: "no"` : les relancer en boucle n'aurait aucun sens.
 #
 # Ordre de grandeur à surveiller avant de toucher aux plafonds : leur somme vaut ≈ 6,5 Gio
@@ -56,7 +56,7 @@ services:
     # SGFE-backend), qui le déclarent `external: true` — voir leur propre fichier.
     networks: [default, obs-edge]
 
-  # ---- ACTIVATION DES SONDES OPTIONNELLES (profils "demo" et "sgfe") ----
+  # ---- ACTIVATION DES SONDES OPTIONNELLES (profils "demo" et "application") ----
   # Toutes les cibles VERSIONNÉES valent « [] » : une cible en dur mais injoignable rend la
   # sonde réellement en échec et « ProbeDown » (severity=page) sonne en permanence chez qui ne
   # fait pas tourner ces conteneurs — deux alertes fantômes qui, faute de `service_name`,
@@ -65,7 +65,7 @@ services:
   #
   # Les deux services one-shot ci-dessous écrivent un fichier « *.local.yml », ignoré par Git
   # (.gitignore racine : `observability/**/*.local.*`) et repris par Prometheus grâce au motif
-  # `demo*.yml` / `sgfe-graphql*.yml` des `file_sd_configs`. Auparavant, `demo-targets`
+  # `demo*.yml` / `application-graphql*.yml` des `file_sd_configs`. Auparavant, `demo-targets`
   # recopiait ses cibles SUR le fichier versionné : une démonstration laissait le dépôt sale et
   # un `git add -A` distrait y remettait les cibles en dur — le défaut même qu'on venait de
   # corriger. Aucun conteneur n'écrit plus dans un fichier suivi par Git.
@@ -81,21 +81,25 @@ services:
       - ./prometheus/targets/demo.yml.example:/src/demo.yml.example:ro
       - ./prometheus/targets:/out
 
-  # Sonde de la passerelle GraphQL du consommateur (SGFE). Même règle que la démo, et pour la
+  # Sonde de la passerelle GraphQL du projet consommateur. Même règle que la démo, et pour la
   # même raison : `gateway` n'est joignable que là où le projet consommateur tourne et partage
   # le réseau `obs-edge`. Sur un poste qui ne fait tourner que le socle, une cible en dur
-  # produirait une page permanente. Activation : `docker compose --profile sgfe up -d`
-  # (en mode image, c'est la variable SGFE_GRAPHQL_TARGET que lit docker/entrypoint.sh).
-  sgfe-targets:
-    profiles: ["sgfe"]
+  # produirait une page permanente. Activation : `docker compose --profile application up -d`
+  # (en mode image, c'est APPLICATION_GRAPHQL_TARGET que lit docker/entrypoint.sh).
+  #
+  # Le service s'appelait `sgfe-targets` jusqu'au 04/10/2026, sous le profil `sgfe` et la
+  # variable SGFE_GRAPHQL_TARGET. Les deux restent acceptés ICI, en repli, pour ne casser aucun
+  # poste qui les utilise : le compose n'entre pas dans l'image, il peut nommer ce projet.
+  application-targets:
+    profiles: ["application", "sgfe"]
     image: busybox:1.37
     restart: "no"
     environment:
-      SGFE_GRAPHQL_TARGET: "${SGFE_GRAPHQL_TARGET:-http://gateway:8000/graphql}"
+      APPLICATION_GRAPHQL_TARGET: "${APPLICATION_GRAPHQL_TARGET:-${SGFE_GRAPHQL_TARGET:-http://gateway:8000/graphql}}"
     command:
       - sh
       - -c
-      - 'printf ''[{"targets":["%s"],"labels":{"role":"sgfe","composant":"gateway"}}]\n'' "$$SGFE_GRAPHQL_TARGET" > /out/sgfe-graphql.local.yml && echo "sonde SGFE activée : $$SGFE_GRAPHQL_TARGET"'
+      - 'printf ''[{"targets":["%s"],"labels":{"role":"application","composant":"gateway"}}]\n'' "$$APPLICATION_GRAPHQL_TARGET" > /out/application-graphql.local.yml && echo "sonde de l application activée : $$APPLICATION_GRAPHQL_TARGET"'
     volumes:
       - ./prometheus/targets:/out
 

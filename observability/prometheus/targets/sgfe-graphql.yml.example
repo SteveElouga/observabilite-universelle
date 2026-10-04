@@ -3,9 +3,10 @@
 # `blackbox-exporter` partagent le réseau `obs-edge` (voir docker-compose.yml des deux
 # projets) — ce qui n'est vrai que là où le projet consommateur tourne.
 #
-# ACTIVATION (jamais par défaut : une cible injoignable = une page permanente) :
-#   · compose : docker compose --profile sgfe up -d      (écrit sgfe-graphql.local.yml)
-#   · image   : SGFE_GRAPHQL_TARGET=http://gateway:8000/graphql
-#   · à la main : cp sgfe-graphql.yml.example sgfe-graphql.local.yml
+# PROPRE À SGFE, donc hors de l'image publiée (.dockerignore écarte tout nom en `*sgfe*`).
+# Le job neutre `blackbox-application-graphql` lit le motif `application-graphql*.yml` :
+#   · compose   : docker compose --profile sgfe up -d   (alias du profil `application`)
+#   · image     : APPLICATION_GRAPHQL_TARGET=http://gateway:8000/graphql
+#   · à la main : cp sgfe-graphql.yml.example application-graphql.local.yml
 - targets: ["http://gateway:8000/graphql"]
   labels: { role: sgfe, composant: gateway }

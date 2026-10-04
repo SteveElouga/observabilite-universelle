@@ -123,9 +123,13 @@ class StructureDesTableauxDeBord(unittest.TestCase):
 
     def test_chaque_dossier_declare_par_le_fournisseur_existe(self) -> None:
         """Un `path` erroné se solde par un dossier Grafana vide, sans erreur visible."""
-        fournisseur = yaml.safe_load(
-            (DASHBOARDS / "provider.yaml").read_text(encoding="utf-8")
-        )["providers"]
+        # Grafana lit TOUS les .yaml du répertoire : `provider.yaml` (le socle, dans l'image) et
+        # `sgfe.yaml` (le consommateur, monté en compose seulement).
+        fournisseur = [
+            declaration
+            for fichier in sorted(DASHBOARDS.glob("*.yaml"))
+            for declaration in yaml.safe_load(fichier.read_text(encoding="utf-8"))["providers"]
+        ]
         self.assertGreaterEqual(len(fournisseur), 2, "le dossier SGFE doit être provisionné")
         for declaration in fournisseur:
             chemin = Path(declaration["options"]["path"])
@@ -355,7 +359,7 @@ class SyntaxeDesRequetes(unittest.TestCase):
 
 @BESOIN_DOCKER
 class SondesDeLApplicationObservee(unittest.TestCase):
-    """C-172 : la plateforme doit sonder SGFE, pas seulement elle-même et une démo."""
+    """C-172 : la plateforme doit sonder l'application consommatrice, pas seulement elle-même."""
 
     def test_blackbox_accepte_ses_modules(self) -> None:
         resultat = executer([
@@ -366,27 +370,42 @@ class SondesDeLApplicationObservee(unittest.TestCase):
         ])
         self.assertEqual(resultat.returncode, 0, resultat.stdout + resultat.stderr)
 
-    def test_prometheus_declare_des_cibles_sgfe(self) -> None:
-        """Les jobs existent, et chacun sait relire le fichier que son profil écrira."""
-        configuration = yaml.safe_load(
-            (RACINE / "prometheus" / "prometheus.yml").read_text(encoding="utf-8")
-        )
-        jobs = {travail["job_name"]: travail for travail in configuration["scrape_configs"]}
-        for attendu in ("blackbox-sgfe-graphql", "blackbox-sgfe-http", "alertmanager"):
+    def test_prometheus_declare_des_cibles_de_l_application(self) -> None:
+        """Les jobs existent, et chacun sait relire le fichier que son profil écrira.
+
+        `blackbox-demo` vit dans `scrape.d/` depuis qu'il est sorti de l'image : on lit donc
+        les jobs comme Prometheus en compose, fichier principal ET `scrape_config_files`.
+        """
+        dossier = RACINE / "prometheus"
+        configuration = yaml.safe_load((dossier / "prometheus.yml").read_text(encoding="utf-8"))
+        travaux = list(configuration["scrape_configs"])
+        for motif in configuration.get("scrape_config_files") or []:
+            for fichier in sorted(dossier.glob(motif)):
+                travaux += yaml.safe_load(fichier.read_text(encoding="utf-8"))["scrape_configs"]
+        jobs = {travail["job_name"]: travail for travail in travaux}
+        # Les jobs de l'IMAGE ne portent le nom d'aucun projet consommateur.
+        for nom in (travail["job_name"] for travail in configuration["scrape_configs"]):
+            with self.subTest(job_de_l_image=nom):
+                self.assertNotIn("sgfe", nom.lower())
+                self.assertNotIn("demo", nom.lower())
+        for attendu in ("blackbox-application-graphql", "blackbox-application-http", "alertmanager"):
             with self.subTest(job=attendu):
                 self.assertIn(attendu, jobs)
 
         # La cible GraphQL était la SEULE cible versionnée non vide, et c'était un défaut :
-        # partout où SGFE ne tourne pas sur `obs-edge`, la sonde échoue vraiment et
+        # partout où le consommateur ne tourne pas sur `obs-edge`, la sonde échoue vraiment et
         # `ProbeDown` (severity=page) sonne en permanence — le défaut qu'on venait de
         # corriger sur `demo.yml`, reproduit ailleurs. Elle vaut « [] » et s'active par
         # profil ; ce qui doit être prouvé, c'est que le job relira bien ce que le profil
         # écrit, sinon l'activation serait sans effet.
         for job, modele, ecrit in (
-            ("blackbox-sgfe-graphql", "sgfe-graphql.yml.example", "sgfe-graphql.local.yml"),
+            ("blackbox-application-graphql", "application-graphql.yml.example",
+             "application-graphql.local.yml"),
+            ("blackbox-application-graphql", "sgfe-graphql.yml.example",
+             "application-graphql.local.yml"),
             ("blackbox-demo", "demo.yml.example", "demo.local.yml"),
         ):
-            with self.subTest(job=job):
+            with self.subTest(job=job, modele=modele):
                 cibles = yaml.safe_load(
                     (RACINE / "prometheus" / "targets" / modele).read_text(encoding="utf-8")
                 )

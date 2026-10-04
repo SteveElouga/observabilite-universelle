@@ -7,7 +7,7 @@ set -eu
 
 # Grafana — l'interface
 wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
-# Loki et Tempo — les deux magasins que gp-formuloo interroge
+# Loki et Tempo — les deux magasins que le consommateur interroge
 wget -q -O /dev/null http://127.0.0.1:3100/ready || exit 1
 wget -q -O /dev/null http://127.0.0.1:3200/ready || exit 1
 # Prometheus — métriques

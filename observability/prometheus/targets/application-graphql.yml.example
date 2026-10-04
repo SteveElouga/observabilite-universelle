@@ -1,0 +1,11 @@
+# Sonde de la passerelle GraphQL du projet consommateur, par `{__typename}` (module
+# http_graphql de blackbox.yml). Joignable par NOM depuis la plateforme quand la passerelle et
+# `blackbox-exporter` partagent le réseau `obs-edge` — ce qui n'est vrai que là où le projet
+# consommateur tourne.
+#
+# ACTIVATION (jamais par défaut : une cible injoignable = une page permanente) :
+#   · compose   : docker compose --profile application up -d   (écrit application-graphql.local.yml)
+#   · image     : APPLICATION_GRAPHQL_TARGET=http://gateway:8000/graphql
+#   · à la main : cp application-graphql.yml.example application-graphql.local.yml
+- targets: ["http://gateway:8000/graphql"]
+  labels: { role: application, composant: gateway }

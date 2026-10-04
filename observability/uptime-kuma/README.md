@@ -73,7 +73,7 @@ permanence et routée vers le récepteur `veilleuse` d'Alertmanager. Pour la rec
 | SGFE — passerelle GraphQL | HTTP(s) **POST** `https://<nginx>/graphql`, corps `{"query":"{__typename}"}`, en-tête `Content-Type: application/json`, mot-clé attendu `__typename` | L'API répond **et** rend du GraphQL. Un 200 seul ne prouve rien : une page d'erreur renvoyée en 200 serait comptée saine |
 | SGFE — passerelle WhatsApp | HTTP(s) `https://<hôte>/whatsapp/health`, mot-clé attendu `"ready":true` | La session WhatsApp est **appairée**. Sans le mot-clé, le service répond 200 en `phase: qr` alors que 100 % des envois échouent — exactement l'incident resté invisible deux jours |
 
-La sonde interne équivalente existe aussi (`blackbox-sgfe-graphql` / `blackbox-sgfe-http`,
+La sonde interne équivalente existe aussi (`blackbox-application-graphql` / `blackbox-application-http`,
 module `http_graphql` de `blackbox.yml`) : elle voit les mêmes surfaces depuis le réseau
 Docker. Les deux sont utiles et ne disent pas la même chose — la sonde interne survit à une
 panne DNS publique, celle d'Uptime Kuma survit à la chute du serveur.

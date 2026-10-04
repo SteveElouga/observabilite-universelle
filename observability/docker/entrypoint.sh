@@ -96,41 +96,30 @@ ecrire_cible keycloak "${KEYCLOAK_METRICS_TARGET:-}" keycloak
 
 # Passerelle GraphQL du consommateur, sondée par `{__typename}` (module http_graphql). Cette
 # cible était VERSIONNÉE en dur jusqu'au 15/09/2026 : partout où le consommateur ne tourne pas
-# sur le réseau obs-edge, elle produisait un « ProbeDown » (severity=page) permanent — le
-# défaut même que `demo.yml` venait de corriger. Elle ne s'écrit donc plus que sur demande.
-if [ -n "${SGFE_GRAPHQL_TARGET:-}" ]; then
-  printf '[{"targets":["%s"],"labels":{"role":"sgfe","composant":"gateway"}}]\n' \
-    "$SGFE_GRAPHQL_TARGET" > /etc/prometheus/targets/sgfe-graphql.yml
-  echo "sonde SGFE (passerelle GraphQL) : $SGFE_GRAPHQL_TARGET"
+# sur le réseau obs-edge, elle produisait un « ProbeDown » (severity=page) permanent. Elle ne
+# s'écrit donc plus que sur demande.
+if [ -n "${APPLICATION_GRAPHQL_TARGET:-}" ]; then
+  printf '[{"targets":["%s"],"labels":{"role":"application","composant":"gateway"}}]\n' \
+    "$APPLICATION_GRAPHQL_TARGET" > /etc/prometheus/targets/application-graphql.yml
+  echo "sonde de l'application (passerelle GraphQL) : $APPLICATION_GRAPHQL_TARGET"
 fi
 
 # Sondes HTTP du consommateur qui ne sont PAS joignables par nom depuis la plateforme (elles
-# ne partagent pas le réseau obs-edge) : nginx, passerelle WhatsApp… Liste d'URLs séparées par
-# des espaces.
-if [ -n "${SGFE_PROBE_TARGETS:-}" ]; then
+# ne partagent pas le réseau obs-edge) : proxy frontal, passerelle tierce… Liste d'URLs
+# séparées par des espaces.
+if [ -n "${APPLICATION_PROBE_TARGETS:-}" ]; then
   liste=""
-  for cible in $SGFE_PROBE_TARGETS; do
+  for cible in $APPLICATION_PROBE_TARGETS; do
     liste="${liste:+$liste,}\"$cible\""
   done
-  printf '[{"targets":[%s],"labels":{"role":"sgfe"}}]\n' "$liste" \
-    > /etc/prometheus/targets/sgfe-http.yml
-  echo "sondes SGFE : $SGFE_PROBE_TARGETS"
+  printf '[{"targets":[%s],"labels":{"role":"application"}}]\n' "$liste" \
+    > /etc/prometheus/targets/application-http.yml
+  echo "sondes de l'application : $APPLICATION_PROBE_TARGETS"
 fi
 
-# Les sondes de la démonstration visent des conteneurs qui n'existent QU'EN MODE COMPOSE. Les
-# laisser actives ferait sonner « ProbeDown » (severity=page) en permanence chez le
-# consommateur — constaté en recette.
-#
-# Depuis le 14/09/2026 le fichier VERSIONNÉ vaut « [] » : l'état par défaut est donc le bon
-# dans les deux modes, et c'est l'activation qui est explicite (DEMO_TARGETS=true ici, service
-# `demo-targets` du profil `demo` en compose). On écrit plutôt que d'effacer : un défaut sûr
-# ne doit jamais dépendre d'un nettoyage qui pourrait ne pas s'exécuter.
-if [ "${DEMO_TARGETS:-false}" = "true" ] && [ -f /etc/prometheus/targets/demo.yml.example ]; then
-  cp /etc/prometheus/targets/demo.yml.example /etc/prometheus/targets/demo.yml
-  echo "cibles de démonstration activées (DEMO_TARGETS=true)."
-else
-  printf '[]\n' > /etc/prometheus/targets/demo.yml
-fi
+# Les sondes de la DÉMONSTRATION n'existent plus dans l'image depuis le 04/10/2026 : le job
+# `blackbox-demo` et ses cibles visaient des conteneurs du seul compose de ce dépôt, et
+# .dockerignore les écarte désormais. DEMO_TARGETS n'a donc plus d'effet ici.
 
 # 4. Passage à supervisord, qui reste root pour pouvoir ouvrir /dev/stdout et poser l'identité
 #    `obs` sur chacun des douze programmes. Lui n'ouvre aucun port et ne parle à aucun réseau.

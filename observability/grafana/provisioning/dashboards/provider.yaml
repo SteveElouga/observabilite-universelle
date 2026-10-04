@@ -8,12 +8,11 @@
 # redémarrage, et c'est voulu : le dashboard versionné est la seule vérité. Qui veut changer un
 # panneau l'exporte, remplace le JSON, et le fait passer en revue comme du code.
 #
-# DEUX fournisseurs, deux dossiers, depuis le 14/09/2026 :
-#   · « Socle »  — les sept écrans GÉNÉRIQUES, qui ne nomment aucun service du consommateur ;
-#   · « SGFE »   — les écrans du CONSOMMATEUR, qui nomment ses compteurs (`sgfe_*`) et ses
-#                  composants. Ils existent parce que les écrans génériques, eux, ne peuvent
-#                  pas les deviner : le dashboard « Métier » du socle interroge une convention
-#                  `metier_*` qu'aucun composant SGFE n'émet, et restait donc vide.
+# Ce fichier ne déclare que le dossier « Socle » : les écrans GÉNÉRIQUES, qui ne nomment aucun
+# service du consommateur, et les seuls que l'image publiée embarque. Un consommateur qui veut
+# ses propres écrans (sur ses compteurs à lui) les déclare dans un fichier voisin : Grafana lit
+# TOUS les .yaml de ce répertoire. Celui du premier consommateur vit dans le dépôt, à côté,
+# chargé par le compose et écarté de l'image par .dockerignore — l'image reste neutre.
 apiVersion: 1
 providers:
   - name: socle
@@ -27,13 +26,3 @@ providers:
       path: /etc/grafana/provisioning/dashboards/socle
       foldersFromFilesStructure: false
 
-  - name: sgfe
-    orgId: 1
-    folder: SGFE
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 30
-    allowUiUpdates: false
-    options:
-      path: /etc/grafana/provisioning/dashboards/sgfe
-      foldersFromFilesStructure: false

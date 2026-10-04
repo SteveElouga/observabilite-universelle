@@ -13,16 +13,18 @@ observability/
 ├── otel-collector-config.yaml         # pipeline central (§10.3) — connecteurs AVANT tail sampling
 ├── alloy-config.alloy                 # logs Docker → Loki + récepteur Faro → Collector
 ├── prometheus/
-│   ├── prometheus.yml
+│   ├── prometheus.yml                 # ce que l'image embarque : aucun job propre à un projet
+│   ├── scrape.d/demo.yml              # job `blackbox-demo` : compose seulement, hors image
 │   ├── targets/                       # cibles OPTIONNELLES, découvertes par fichier (README dédié)
 │   │   ├── postgres.yml               # « [] » par défaut ; l'entrypoint les remplit selon
 │   │   ├── rabbitmq.yml               #   DATA_SOURCE_NAME / RABBITMQ_METRICS_TARGET /
 │   │   ├── keycloak.yml               #   KEYCLOAK_METRICS_TARGET
-│   │   ├── sgfe-graphql.yml           # « [] » : passerelle GraphQL du consommateur, activée
-│   │   ├── sgfe-graphql.yml.example   #   par le profil `sgfe` ou SGFE_GRAPHQL_TARGET
-│   │   ├── sgfe-http.yml              # autres surfaces HTTP du consommateur (SGFE_PROBE_TARGETS)
+│   │   ├── application-graphql.yml    # « [] » : passerelle GraphQL du consommateur, activée par
+│   │   ├── application-graphql.yml.example  # le profil `application` ou APPLICATION_GRAPHQL_TARGET
+│   │   ├── application-http.yml       # autres surfaces HTTP (APPLICATION_PROBE_TARGETS)
+│   │   ├── sgfe-graphql.yml.example   # la même, aux étiquettes de SGFE — hors image
 │   │   ├── demo.yml                   # « [] » : les sondes de la démo s'activent par profil
-│   │   ├── demo.yml.example           #   … depuis ce modèle (profil `demo`, ou DEMO_TARGETS=true)
+│   │   ├── demo.yml.example           #   … depuis ce modèle (profil `demo`) — hors image
 │   │   └── (*.local.yml)              # écrits par les profils, ignorés par Git : aucun conteneur
 │   │                                  #   n'écrit plus dans un fichier versionné
 │   └── rules/
@@ -34,7 +36,7 @@ observability/
 │       ├── collecte.yml               # la plateforme se surveille : pertes du Collector,
 │       │                              #   notifications d'alerte en échec (écran 12)
 │       ├── veilleuse.yml              # « dead man's switch » : son SILENCE est le signal
-│       ├── sgfe.yml                   # alertes du CONSOMMATEUR (WhatsApp, crons, composants)
+│       ├── sgfe.yml                   # alertes du CONSOMMATEUR (WhatsApp, crons…) — hors image
 │       ├── slo-sgfe.yml               # SLO SGFE multi-burn-rate : GÉNÉRÉ par sloth, et
 │       │                              #   VERSIONNÉ — voir « SLO générés » plus bas
 │       ├── consommateur/              # VIDE dans l'image : les règles d'un projet observé,
@@ -58,7 +60,8 @@ observability/
 ├── hardening/                         # durcissement §7.4 : Caddy TLS, ports dépubliés, backup.sh
 ├── grafana/provisioning/
 │   ├── datasources/datasources.yaml   # LA corrélation : métrique→trace→log→profil (§10.5)
-│   ├── dashboards/provider.yaml       # déclaration des dossiers « Socle » et « SGFE »
+│   ├── dashboards/provider.yaml       # déclaration du dossier « Socle » (le seul de l'image)
+│   ├── dashboards/sgfe.yaml           # déclaration du dossier « SGFE » — hors image
 │   ├── dashboards/socle/              # les 7 dashboards GÉNÉRIQUES en JSON versionné (§8.3)
 │   │   ├── ensemble.json              #   vue d'ensemble : santé, RED global, saturation
 │   │   ├── service.json               #   par service, sélecteur $service — remplace 5 copies
@@ -67,7 +70,7 @@ observability/
 │   │   ├── evenements.json            #   débit, arriéré, files de rebut
 │   │   ├── metier.json                #   compteurs applicatifs (convention documentée)
 │   │   └── slo.json                   #   budget d'erreur et vitesse de consommation
-│   └── dashboards/sgfe/               # les écrans du CONSOMMATEUR, sur ses compteurs sgfe_*
+│   └── dashboards/sgfe/               # les écrans du CONSOMMATEUR (compteurs sgfe_*) — hors image
 │       ├── metier.json                #   factures, encaissements, parc d'abonnés, campagnes
 │       └── exploitation.json          #   canal WhatsApp, présence des composants, sondes, SLO
 ├── tests/                             # la suite qui prouve tout ce qui précède (voir plus bas)
@@ -201,6 +204,38 @@ Une API GraphQL reçoit tout sur `POST /graphql`. Le serveur qui suit la convent
 
 Pour voir ses opérations, un consommateur déclare donc les noms qu'il émet. Une ligne `autre` qui grossit dans le tableau signale une opération à déclarer ou un client qui forge des noms.
 
+## Image neutre : ce que la plateforme publiée ne porte pas
+
+L'image `nyobeelouga5/observabilite` est **universelle** : tout consommateur la tire, et aucun ne
+doit y voir le nom d'un autre. Jusqu'à la 1.1.7 elle embarquait pourtant, en préprod d'un autre
+projet, un dossier Grafana « SGFE », des alertes et SLO `sgfe_*`, des jobs `blackbox-sgfe-*` et
+un job `blackbox-demo` visant des conteneurs de ce seul dépôt. Depuis le 04/10/2026 :
+
+- **Les sondes de l'application** s'appellent `blackbox-application-graphql` et
+  `blackbox-application-http`, réglées par `APPLICATION_GRAPHQL_TARGET` et
+  `APPLICATION_PROBE_TARGETS` (voir `prometheus/targets/README.md`). L'étiquette `role` vaut
+  `application`.
+- **Tout fichier propre à SGFE reste dans le dépôt mais hors de l'image** : `.dockerignore`
+  écarte tout nom contenant `sgfe` (règles `sgfe.yml` et `slo-sgfe.yml`, `dashboards/sgfe/` et
+  sa déclaration `dashboards/sgfe.yaml`, `targets/sgfe-*`). Le compose les monte toujours.
+- **La démonstration sort de l'image** : le job `blackbox-demo` vit dans
+  `prometheus/scrape.d/demo.yml` (lu par `scrape_config_files`, motif vide accepté) et ses
+  cibles `targets/demo*` sont écartées. `DEMO_TARGETS` n'a plus d'effet en mode image ; en
+  compose, `--profile demo` fonctionne comme avant.
+- **Aucun commentaire embarqué** ne nomme un projet consommateur (« le projet consommateur »).
+  Preuve : `tests/test_configurations.py` reconstruit les `COPY` du Dockerfile sur une base
+  minimale, avec le vrai `.dockerignore`, et y cherche le nom de chaque consommateur connu.
+
+**Migration — les anciens noms ne sont PAS lus par l'image.** `SGFE_GRAPHQL_TARGET` et
+`SGFE_PROBE_TARGETS` disparaissent de l'entrypoint : les y garder comme alias aurait écrit le
+nom du projet dans l'image, c'est-à-dire le défaut même qu'on retire. Aucun déploiement connu
+ne les pose (relevé le 04/10/2026 dans les compose et `.env` des projets du poste). Qui les
+utilisait renomme la variable, ou la relaie dans son propre compose :
+`APPLICATION_GRAPHQL_TARGET: ${SGFE_GRAPHQL_TARGET}`. Le compose **de ce dépôt**, qui n'entre
+pas dans l'image, garde le repli : profil `sgfe` (alias de `application`) et
+`SGFE_GRAPHQL_TARGET` lu si `APPLICATION_GRAPHQL_TARGET` est vide. Les tableaux SGFE suivent
+le renommage des jobs (`job=~"blackbox-application-.*"`).
+
 ## Mémoire et redémarrage : deux moitiés d'une même protection
 
 Le 12/09/2026, **Loki, Tempo et Pyroscope sont sortis en code 137 (OOMKilled) et sont restés
@@ -218,7 +253,7 @@ Deux réglages, indissociables :
 
 Poser un plafond sans reprise n'avance que l'heure de la mort. **Tous** les services durables
 portent donc `restart: unless-stopped` ; seuls les trois one-shot (`demo-targets`,
-`sgfe-targets`, `glitchtip-migrate`) gardent `restart: "no"`, les relancer en boucle n'ayant
+`application-targets`, `glitchtip-migrate`) gardent `restart: "no"`, les relancer en boucle n'ayant
 aucun sens. Un `docker compose stop` explicite reste respecté — c'est la différence avec
 `always`, et la raison du choix.
 
