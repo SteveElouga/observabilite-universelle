@@ -25,8 +25,9 @@ qui rend l'erreur dans le champ `errors` d'une réponse HTTP 200, ou un repli si
 désormais attrapé chez l'APPELANT, par ses spans CLIENT en échec : c'est HighClientErrorRate. Reste
 hors champ : un service arrêté que PERSONNE n'appelle (cron, consommateur de file), et les spans
 CONSUMER et ceux du navigateur, qui n'entrent dans aucune des deux alertes ; ceux-là ne se voient
-qu'à l'œil, quand leur courbe disparaît du panneau « Débit » de la ligne « RED par service », écran
-*Vue d'ensemble*.
+qu'à l'œil, quand leur courbe tombe à zéro dans le panneau « Débit » de la ligne « RED par
+service », écran *Vue d'ensemble* (elle ne disparaît pas : spanmetrics n'expire pas les séries
+d'un service muet, il continue d'exporter ses compteurs figés jusqu'au redémarrage du collecteur).
 
 **Ce qu'on regarde.** Dashboard *Par service*, sélecteur sur le service en cause → panneau
 « Erreurs par opération » pour savoir si l'erreur est diffuse ou concentrée sur une opération.
@@ -35,8 +36,10 @@ en tête de liste désigne directement la dépendance.
 Puis les journaux du même écran, filtrés sur le niveau erreur.
 
 **Ce qu'on fait.** Une opération unique en cause → dépendance de cette opération (base, courtier,
-service appelé). Erreurs diffuses → le service lui-même, ou son démarrage récent. Cliquer un
-exemplar mène à la trace ; le `trace_id` du journal mène à la même.
+service appelé). Erreurs diffuses → le service lui-même, ou son démarrage récent. Les courbes
+spanmetrics ne portent pas d'exemplar (le connecteur ne les émet pas ici) : la trace s'ouvre par
+le `trace_id` du journal, ou dans Tempo par
+`{ resource.service.name = "<service>" && kind = server && status = error }`.
 
 ## HighClientErrorRate
 
@@ -57,9 +60,14 @@ opération » (les cinq opérations qui échouent le plus, appels sortants compr
 d'échec dans Tempo (*Explore*), en TraceQL :
 `{ resource.service.name = "<appelant>" && kind = client && status = error && name = "<span_name>" }`.
 Le span client en erreur porte l'adresse de l'appelé (`server.address`, `peer.service` ou
-`rpc.service` selon l'instrumentation) et le message d'erreur. Puis, sur l'appelé :
-- sa courbe a disparu du panneau « Débit » de la ligne « RED par service » (*Vue d'ensemble*)
-  → il est arrêté, ou ne reçoit plus rien (réseau, résolution de nom) ;
+`rpc.service` selon l'instrumentation) et le message d'erreur. Quand `span_name` ne vaut que
+`GET`, la paire appelant → appelé se lit aussi sur Prometheus, par le connecteur servicegraph :
+`sum by (client, server) (rate(traces_service_graph_request_failed_total{client="<appelant>"}[5m]))`.
+Pour un appelé qui ne répond plus du tout, la paire n'existe que si le collecteur en fait un nœud
+virtuel (span client portant `peer.service`, `db.name` ou `db.system`) ; à défaut, la trace
+tranche. Puis, sur l'appelé :
+- sa courbe tombe à zéro dans le panneau « Débit » de la ligne « RED par service » (*Vue
+  d'ensemble*) → il est arrêté, ou ne reçoit plus rien (réseau, résolution de nom) ;
 - elle est là mais en erreur → HighErrorRate devrait sonner pour lui aussi, sa fiche s'applique ;
 - l'appelé est hors du périmètre observé (API tierce, base) → l'erreur est chez le fournisseur.
 
@@ -68,6 +76,15 @@ son dernier démarrage, mémoire). Délais dépassés sans erreur côté appelé
 du réseau. Dépendance tierce → basculer sur le repli prévu, ou attendre en suivant sa page d'état.
 Un appelant à moins de deux appels par minute vers l'opération n'atteint pas le plancher de dix
 échecs : son silence ne prouve rien.
+
+**Fausse alerte connue : les 4xx attendus.** Selon les conventions OTel, un span client HTTP est
+en erreur pour TOUTE réponse 4xx, là où un span serveur ne l'est que pour un 5xx. Si la trace
+montre des `http.response.status_code` 404 (ou 409, 422) qui font partie du fonctionnement normal,
+par exemple des recherches qui ne trouvent rien, l'appelé est sain. Conduite : poser un silence
+Alertmanager sur ce couple (`service_name`, `span_name`) le temps que le PROJET corrige son
+instrumentation (crochet de réponse qui ne marque pas en erreur un 4xx attendu, ou span client
+nommé par route plutôt que par la seule méthode). Ne pas relever le seuil : il protège les autres
+appelants.
 
 ## HighLatencyP99
 

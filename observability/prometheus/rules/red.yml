@@ -55,6 +55,10 @@ groups:
   #
   # Seuil 25 % : une dépendance morte donne ~100 % d'échecs, une dépendance saine quelques
   # pour cent au pire (délais, reprises) ; un appel sur quatre en échec n'est plus du bruit.
+  # Exception connue : selon les conventions OTel, un span client HTTP est en erreur pour TOUTE
+  # réponse 4xx. Un appelant dont les 404 sont attendus (recherches) sur un span_name « GET »
+  # peut dépasser 25 % en permanence : c'est au projet d'ajuster son instrumentation (conduite
+  # dans runbooks/README.md#highclienterrorrate).
   # Plancher de 10 échecs en 5 min : sans lui, un appel isolé raté (1 sur 1 = 100 %) sonnerait.
   # Un appelant à très faible débit (moins de 2 appels par minute) n'est donc pas couvert.
   # `for: 5m` et `severity: page` comme HighErrorRate : c'est le même incident vu d'un cran plus

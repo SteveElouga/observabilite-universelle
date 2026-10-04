@@ -168,8 +168,8 @@ tests:
         exp_alerts: []
 
   # ⑤ Sous le seuil ou sous le plancher, rien ne sonne. 24 % d'échecs à fort débit (bloque une
-  #    baisse du seuil à 0,2, quand ④ bloque une hausse au-delà de 1) ; 100 % d'échecs mais un
-  #    seul appel par minute, 5 échecs en 5 min (bloque la suppression du plancher de 10).
+  #    baisse du seuil à 0,2 ; ⑦ bloque la hausse) ; 100 % d'échecs mais un seul appel par
+  #    minute, 5 échecs en 5 min (bloque la suppression du plancher de 10).
   - interval: 1m
     name: "appels sortants sous le seuil ou sous le plancher, rien ne sonne"
     input_series:
@@ -210,3 +210,26 @@ tests:
             exp_annotations:
               summary: "api : 100% de requêtes servies en erreur"
               runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#higherrorrate"
+
+  # ⑦ Échec PARTIEL, la dépendance répond une fois sur deux à peu près : 3 échecs et 5 succès par
+  #    minute, 37,5 % et 15 échecs en 5 min. L'alerte sonne. Avec ⑤, ce cas encadre le seuil
+  #    (entre 24 % et 37,5 %) et le plancher (entre 5 et 15 échecs) : un seuil relevé à 0,4 ou
+  #    un plancher relevé à 16 le font échouer.
+  - interval: 1m
+    name: "un echec partiel des appels sortants fait sonner l appelant"
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="inventaire.Stock/Reserver",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_ERROR"}'
+        values: "0+3x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_name="inventaire.Stock/Reserver",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_UNSET"}'
+        values: "0+5x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighClientErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service_name: api
+              span_name: inventaire.Stock/Reserver
+            exp_annotations:
+              summary: "api : 37.5% d'appels sortants « inventaire.Stock/Reserver » en échec"
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#highclienterrorrate"
