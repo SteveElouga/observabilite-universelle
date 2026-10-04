@@ -12,12 +12,16 @@ fait**. Si une fiche ne peut pas répondre à la troisième, l'alerte n'a rien �
 
 ## HighErrorRate
 
-**Ce que ça veut dire.** Plus de 5 % des spans d'un service portent `STATUS_CODE_ERROR` depuis
-cinq minutes. Mesuré sur 100 % du trafic, avant échantillonnage : le chiffre n'est pas une
-estimation.
+**Ce que ça veut dire.** Plus de 5 % des requêtes SERVIES par un service (spans serveur,
+`span_kind="SPAN_KIND_SERVER"`) portent `STATUS_CODE_ERROR` depuis cinq minutes. Mesuré sur 100 %
+du trafic, avant échantillonnage : le chiffre n'est pas une estimation. Les appels sortants
+(gRPC, SQL) n'entrent pas dans le calcul : une dépendance en panne fait sonner la dépendance,
+et l'appelant seulement s'il renvoie lui-même l'erreur.
 
 **Ce qu'on regarde.** Dashboard *Par service*, sélecteur sur le service en cause → panneau
 « Erreurs par opération » pour savoir si l'erreur est diffuse ou concentrée sur une opération.
+Ce panneau compte TOUS les spans, appels sortants compris : c'est voulu, une opération sortante
+en tête de liste désigne directement la dépendance.
 Puis les journaux du même écran, filtrés sur le niveau erreur.
 
 **Ce qu'on fait.** Une opération unique en cause → dépendance de cette opération (base, courtier,
@@ -26,8 +30,10 @@ exemplar mène à la trace ; le `trace_id` du journal mène à la même.
 
 ## HighLatencyP99
 
-**Ce que ça veut dire.** Le P99 d'un service dépasse 500 ms depuis dix minutes. Le P99 attrape ce
-que la moyenne cache : un utilisateur sur cent attend trop.
+**Ce que ça veut dire.** Le P99 des requêtes servies par un service (spans serveur) dépasse 500 ms
+depuis dix minutes. Le P99 attrape ce que la moyenne cache : un utilisateur sur cent attend trop.
+Une requête SQL lente ne compte pas en elle-même, seulement par le temps qu'elle ajoute à la
+requête servie qui l'attend.
 
 **Ce qu'on regarde.** *Par service* → « Opérations les plus lentes ». Comparer au P95 du même
 écran : un P99 seul très haut désigne une queue, pas une dégradation générale.

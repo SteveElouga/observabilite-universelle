@@ -1,0 +1,83 @@
+# tests/prometheus/red_test.yml — `promtool test rules`
+# Prouve que les alertes RED ne lisent que les spans SERVEUR. Chaque cas est construit pour
+# donner le résultat INVERSE avec l'ancienne expression (toutes sortes de spans confondues) :
+# un retour en arrière fait donc échouer le test, au lieu de passer en silence.
+rule_files:
+  - ../../prometheus/rules/red.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ① Les appels sortants échouent tous, les requêtes servies réussissent : rien ne sonne.
+  #    Ancienne expression : 100 erreurs CLIENT sur 200 spans = 50 %, et un P99 tiré à ~1 s
+  #    par les requêtes SQL lentes. C'est l'appelé qui est en panne, pas ce service.
+  - interval: 1m
+    name: "des spans client en erreur ou lents ne declenchent rien"
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_UNSET"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_ERROR"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_SERVER",le="100"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_SERVER",le="1000"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_SERVER",le="+Inf"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_CLIENT",le="100"}'
+        values: "0+0x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_CLIENT",le="1000"}'
+        values: "0+1000x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_CLIENT",le="+Inf"}'
+        values: "0+1000x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighErrorRate
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: HighLatencyP99
+        exp_alerts: []
+
+  # ② Les requêtes servies échouent (10 %) et traînent : les deux alertes sonnent, seuils
+  #    inchangés. Ancienne expression : les 1 000 appels SQL réussis et rapides par minute
+  #    noyaient les 10 erreurs (moins de 1 %) et le P99 restait sous les 100 ms — silence.
+  - interval: 1m
+    name: "des spans serveur en erreur et lents declenchent"
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_ERROR"}'
+        values: "0+10x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_kind="SPAN_KIND_SERVER",status_code="STATUS_CODE_UNSET"}'
+        values: "0+90x30"
+      - series: 'traces_span_metrics_calls_total{service_name="api",span_kind="SPAN_KIND_CLIENT",status_code="STATUS_CODE_UNSET"}'
+        values: "0+1000x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_SERVER",le="100"}'
+        values: "0+0x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_SERVER",le="1000"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_SERVER",le="+Inf"}'
+        values: "0+100x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_CLIENT",le="100"}'
+        values: "0+10000x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_CLIENT",le="1000"}'
+        values: "0+10000x30"
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_kind="SPAN_KIND_CLIENT",le="+Inf"}'
+        values: "0+10000x30"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service_name: api
+            exp_annotations:
+              summary: "api : 10% de requêtes servies en erreur"
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#higherrorrate"
+      - eval_time: 20m
+        alertname: HighLatencyP99
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              service_name: api
+            exp_annotations:
+              summary: "api : p99 > 500 ms"
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#highlatencyp99"
