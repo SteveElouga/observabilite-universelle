@@ -45,6 +45,39 @@ Ajoutez un moniteur **Push** (heartbeat) comme dead man's switch actif : la plat
 un battement régulier à Uptime Kuma ; si le battement cesse, Uptime Kuma alerte. Utile pour
 détecter un gel silencieux qui laisserait quand même répondre le port HTTP.
 
+⚠ **Ce chapitre n'est pas décoratif.** Au contrôle du 11/09/2026, l'instance d'Uptime Kuma
+tournait avec **0 moniteur, 0 notification et 0 utilisateur** : personne n'avait passé les
+cinq minutes de configuration, et l'angle mort décrit plus haut est resté grand ouvert
+pendant que la chaîne d'alerte interne échouait en silence. Une installation sans moniteur
+n'est pas une supervision externe, c'est un conteneur qui tourne.
+
+### Câbler le battement de cœur de la plateforme
+
+La règle Prometheus `ChaineAlertingVivante` (`prometheus/rules/veilleuse.yml`) est active en
+permanence et routée vers le récepteur `veilleuse` d'Alertmanager. Pour la recevoir :
+
+1. Uptime Kuma → **Add New Monitor** → type **Push**, intervalle 300 s, « Retries » 2.
+   Uptime Kuma affiche alors une URL de la forme `https://kuma.example.com/api/push/<jeton>`.
+2. Déposer cette URL sur le serveur de la plateforme dans
+   `observability/alertmanager/secrets/veilleuse_webhook_url`, puis redémarrer Alertmanager.
+   `render-config.sh` y branche le webhook et annonce l'intégration au démarrage.
+3. Vérifier dans les cinq minutes que le moniteur passe au vert, puis **arrêter Alertmanager
+   deux minutes** : le moniteur doit virer au rouge. Tant que cette bascule n'a pas été
+   observée une fois, la veilleuse n'est qu'une intention.
+
+### Moniteurs du projet consommateur (SGFE)
+
+| Nom | Type / URL | Ce qu'il vérifie |
+|---|---|---|
+| SGFE — entrée publique | HTTP(s) `https://<nginx>/healthz` | Le reverse proxy et le frontend répondent |
+| SGFE — passerelle GraphQL | HTTP(s) **POST** `https://<nginx>/graphql`, corps `{"query":"{__typename}"}`, en-tête `Content-Type: application/json`, mot-clé attendu `__typename` | L'API répond **et** rend du GraphQL. Un 200 seul ne prouve rien : une page d'erreur renvoyée en 200 serait comptée saine |
+| SGFE — passerelle WhatsApp | HTTP(s) `https://<hôte>/whatsapp/health`, mot-clé attendu `"ready":true` | La session WhatsApp est **appairée**. Sans le mot-clé, le service répond 200 en `phase: qr` alors que 100 % des envois échouent — exactement l'incident resté invisible deux jours |
+
+La sonde interne équivalente existe aussi (`blackbox-sgfe-graphql` / `blackbox-sgfe-http`,
+module `http_graphql` de `blackbox.yml`) : elle voit les mêmes surfaces depuis le réseau
+Docker. Les deux sont utiles et ne disent pas la même chose — la sonde interne survit à une
+panne DNS publique, celle d'Uptime Kuma survit à la chute du serveur.
+
 ## Notifications vers Slack
 
 Dans **Settings → Notifications → Add**, choisissez Slack, collez l'URL de webhook entrant du

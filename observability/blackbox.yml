@@ -1,7 +1,8 @@
 # blackbox.yml — la vue « de l'extérieur » (§4.8) ; cibles déclarées dans prometheus.yml
-# Deux modules : http_local pour les sondes internes en HTTP (plateforme et démo sur le
+# Modules : http_local pour les sondes internes en HTTP (plateforme et consommateur sur le
 # réseau Docker), http_2xx pour les cibles publiques en HTTPS (gabarit prod, exige un
-# certificat TLS valide). Le vrai point de vue externe reste Uptime Kuma hébergé hors infra
+# certificat TLS valide), http_graphql pour les API GraphQL qui n'exposent pas de route de
+# santé dédiée. Le vrai point de vue externe reste Uptime Kuma hébergé hors infra
 # (uptime-kuma/README.md) : Blackbox sonde depuis l'intérieur du réseau, sans instrumentation.
 modules:
   http_local:
@@ -14,3 +15,24 @@ modules:
     prober: http
     timeout: 5s
     http: { fail_if_not_ssl: true, preferred_ip_protocol: ip4 }
+
+  # Sonde d'une API GraphQL sans route de santé : la requête d'introspection minimale
+  # `{__typename}` doit répondre 200 ET rendre `"__typename": "Query"`. Un 200 ne suffit
+  # pas — une passerelle qui renvoie une page d'erreur HTML en 200 serait comptée saine.
+  #
+  # `Host: localhost` est NÉCESSAIRE, pas décoratif : une application Django refuse les
+  # requêtes dont l'en-tête Host n'est pas dans ALLOWED_HOSTS (`DisallowedHost`, 400) —
+  # constaté en sondant `http://gateway:8000/graphql` sans lui. Adapter la valeur si le
+  # consommateur restreint autrement ses hôtes autorisés.
+  http_graphql:
+    prober: http
+    timeout: 5s
+    http:
+      method: POST
+      preferred_ip_protocol: ip4
+      valid_status_codes: [200]
+      headers:
+        Content-Type: application/json
+        Host: localhost
+      body: '{"query":"{__typename}"}'
+      fail_if_body_not_matches_regexp: ['"__typename"\s*:\s*"Query"']

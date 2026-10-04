@@ -232,9 +232,57 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "quantile_over_time(0.75, {source=\"faro\"} | logfmt | kind=\"measurement\" | __error__=\"\" | unwrap value [$__interval]) by (name)",
+          "expr": "quantile_over_time(0.75, {source=\"faro\"} | logfmt | kind=\"measurement\" | type=\"web-vitals\" | __error__=\"\" | unwrap lcp [$__interval])",
           "editorMode": "code",
-          "legendFormat": "{{name}}",
+          "legendFormat": "LCP — plus grand rendu",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {source=\"faro\"} | logfmt | kind=\"measurement\" | type=\"web-vitals\" | __error__=\"\" | unwrap fcp [$__interval])",
+          "editorMode": "code",
+          "legendFormat": "FCP — premier rendu",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {source=\"faro\"} | logfmt | kind=\"measurement\" | type=\"web-vitals\" | __error__=\"\" | unwrap ttfb [$__interval])",
+          "editorMode": "code",
+          "legendFormat": "TTFB — premier octet",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {source=\"faro\"} | logfmt | kind=\"measurement\" | type=\"web-vitals\" | __error__=\"\" | unwrap inp [$__interval])",
+          "editorMode": "code",
+          "legendFormat": "INP — réactivité",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "quantile_over_time(0.75, {source=\"faro\"} | logfmt | kind=\"measurement\" | type=\"web-vitals\" | __error__=\"\" | unwrap cls [$__interval])",
+          "editorMode": "code",
+          "legendFormat": "CLS — stabilité visuelle",
           "instant": false,
           "range": true
         }
@@ -264,7 +312,7 @@
           "sort": "desc"
         }
       },
-      "description": "LCP, FCP, TTFB, CLS, INP tels que le navigateur les mesure. Le P75 est la statistique de référence des Core Web Vitals — pas la moyenne."
+      "description": "LCP, FCP, TTFB, INP, CLS tels que le navigateur les mesure. Le P75 est la statistique de référence des Core Web Vitals — pas la moyenne.\n\nUne requête par mesure, et c'est obligatoire : le récepteur Faro d'Alloy écrit une ligne logfmt `kind=measurement type=web-vitals lcp=… fcp=…`, avec UN CHAMP PAR MESURE. Il n'existe ni champ `name` ni champ `value` — l'ancienne requête `unwrap value … by (name)` ne pouvait donc rendre qu'une série vide `{}` (constaté : 557 mesures agrégées sous une étiquette inexistante).\n\nCLS est sans unité, les quatre autres sont en millisecondes : l'axe est laissé en millisecondes, lire CLS sur sa propre échelle."
     },
     {
       "type": "timeseries",
@@ -287,7 +335,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "count(count by (session_id) ({source=\"faro\"} | logfmt | __error__=\"\" [$__interval]))",
+          "expr": "count(count by (session_id) (count_over_time({source=\"faro\"} | logfmt | __error__=\"\" [$__interval])))",
           "editorMode": "code",
           "legendFormat": "sessions",
           "instant": false,
@@ -318,7 +366,7 @@
           "sort": "desc"
         }
       },
-      "description": "Sessions distinctes ayant émis au moins un événement sur l'intervalle."
+      "description": "Sessions distinctes ayant émis au moins un événement sur l'intervalle.\n\nLe `count_over_time` intérieur n'est pas décoratif : LogQL n'accepte PAS d'agréger directement un intervalle de journaux (`count by (…) ({…} [5m])` → « syntax error: unexpected RANGE »). Sans lui, ce panneau renvoyait une erreur de syntaxe à chaque affichage et n'a jamais rien montré."
     },
     {
       "type": "row",

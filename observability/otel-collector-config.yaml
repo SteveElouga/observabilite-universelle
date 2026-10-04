@@ -9,12 +9,40 @@ receivers:
       http: { endpoint: 0.0.0.0:4318 }
 
 processors:
-  memory_limiter: { check_interval: 1s, limit_mib: 512 }
+  # `spike_limit_mib` explicite : sans lui le Collector prend 20 % de `limit_mib`, ce qui
+  # à 512 Mio laisse une marge trop fine — on refuse alors des lots entiers au lieu de
+  # ralentir. La limite de conteneur posée dans docker-compose.yml (768 Mio) laisse la
+  # place à ce plafond logiciel de se déclencher AVANT l'OOM killer du noyau.
+  memory_limiter: { check_interval: 1s, limit_mib: 512, spike_limit_mib: 128 }
 
   # Enrichissement commun (labels disciplinés, §3.5)
+  #
+  # `insert` ET NON `upsert`, et c'est la correction du 14/09/2026. Avec `upsert`, la
+  # valeur de DEPLOY_ENV (« prod » par défaut dans le Dockerfile et le compose) ÉCRASAIT
+  # celle envoyée par les SDK : toute la télémétrie de développement d'un projet client
+  # arrivait étiquetée `prod` (constaté : `label/deployment_environment/values` → ["prod"]
+  # alors que les 9 services envoient `deployment.environment=dev`). Un environnement de
+  # production partageant ce Collector aurait été indistinguable du reste.
+  #
+  # `insert` n'écrit QUE si la clé est absente : la valeur du SDK gagne toujours, la
+  # variable du Collector ne sert plus que de défaut pour les émetteurs muets.
+  #
+  # Deux clés et non une : `deployment.environment` est DÉPRÉCIÉ par la convention
+  # sémantique OpenTelemetry (« Replaced by deployment.environment.name »,
+  # https://opentelemetry.io/docs/specs/semconv/registry/attributes/deployment/), dont
+  # `deployment.environment.name` est la forme stable. On normalise donc ici, sans rien
+  # casser : les SDK encore sur l'ancienne clé voient leur valeur recopiée sur la
+  # nouvelle, les SDK migrés sont laissés tels quels, et l'ancienne clé est conservée le
+  # temps que les tableaux de bord et requêtes existants migrent.
   resource:
     attributes:
-      - { key: deployment.environment, value: "${env:DEPLOY_ENV}", action: upsert }
+      # 1. Migration : ancienne clé → nouvelle clé, seulement si la nouvelle est absente.
+      - { key: deployment.environment.name, from_attribute: deployment.environment, action: insert }
+      # 2. Défaut de la plateforme, seulement si le SDK n'a rien dit du tout.
+      - { key: deployment.environment.name, value: "${env:DEPLOY_ENV}", action: insert }
+      # 3. Compatibilité ascendante : l'ancienne clé reste renseignée pour les requêtes
+      #    existantes, mais on ne l'écrase plus jamais.
+      - { key: deployment.environment, from_attribute: deployment.environment.name, action: insert }
 
   # Hygiène : jeter le bruit et les données sensibles AVANT stockage
   filter/drop_noise:
@@ -51,7 +79,11 @@ processors:
       - { name: slow,    type: latency,      latency: { threshold_ms: 500 } }
       - { name: baseline, type: probabilistic, probabilistic: { sampling_percentage: 10 } }
 
-  batch: { timeout: 5s }
+  # Lots bornés : sans `send_batch_max_size`, un pic de trafic produit un lot unique
+  # énorme que l'exportateur remote-write n'arrive pas à pousser dans son délai → le lot
+  # entier est jeté (voir l'exportateur ci-dessous). 8192 points est la taille conseillée
+  # par l'exportateur helper pour du remote-write Prometheus.
+  batch: { timeout: 5s, send_batch_size: 8192, send_batch_max_size: 8192 }
 
 # Métriques dérivées des spans — calculées sur 100 % du trafic, AVANT le tail sampling
 connectors:
@@ -71,9 +103,30 @@ exporters:
   otlp/tempo:
     endpoint: tempo:4317
     tls: { insecure: true }
+  # 133 386 points de métrique jetés en 6 h (« Exporting failed. Dropping data »,
+  # `context deadline exceeded ») avant le 14/09/2026 : l'exportateur tournait avec les
+  # valeurs par défaut, c'est-à-dire un délai de 5 s, aucune reprise et une file de
+  # 10 000 éléments seulement. Sous charge (suites de tests parallèles), Prometheus met
+  # plus de 5 s à accepter un lot et TOUT le lot part à la poubelle : les compteurs se
+  # recalent au lot suivant, mais les histogrammes de la fenêtre sont perdus pour de bon.
+  #
+  # ⚠ `sending_queue` N'EXISTE PAS sur cet exportateur — il expose `remote_write_queue`
+  # à la place (README de l'exportateur : « note that the exporter doesn't support
+  # sending_queue but provides remote_write_queue »). Poser `sending_queue` ici
+  # empêcherait le Collector de démarrer.
   prometheusremotewrite:
     endpoint: http://prometheus:9090/api/v1/write   # Mimir à l'échelle (§7.2)
     resource_to_telemetry_conversion: { enabled: true }
+    timeout: 30s                       # 6× le défaut : absorbe une pause GC de Prometheus
+    remote_write_queue:
+      enabled: true
+      queue_size: 50000                # ~5× le défaut : tient une minute de rafale
+      num_consumers: 5
+    retry_on_failure:
+      enabled: true                    # défaut de l'helper, rendu explicite : c'est LA correction
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
   otlphttp/loki:
     endpoint: http://loki:3100/otlp                 # ingestion OTLP native de Loki 3
 

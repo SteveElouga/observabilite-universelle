@@ -1,0 +1,58 @@
+# tests/prometheus/applicatif_test.yml — `promtool test rules`
+# Prouve que le TROU de surveillance des sauvegardes est désormais déclaré (C-042/C-172) :
+# `SauvegardeAbsente` ne pouvait pas sonner faute de série, et personne ne le savait.
+rule_files:
+  - ../../prometheus/rules/applicatif.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ① Aucun travail de sauvegarde ne déclare son succès : la surveillance est inopérante.
+  - interval: 5m
+    name: "l absence totale de metrique de sauvegarde est declaree"
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1+0x100"
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: SauvegardeJamaisDeclaree
+        exp_alerts:
+          # `dette` et non `ticket` : cette alerte est vraie EN PERMANENCE tant que le dépôt
+          # observé n'écrit aucune métrique de sauvegarde. En `ticket` elle repartait dans le
+          # canal d'incident toutes les 24 h — le bruit récurrent que C-354 venait justement de
+          # nettoyer. Le routage vers le canal de dette technique tient à cette étiquette et à
+          # elle seule (alertmanager.yml) : on la fige donc ici, annotation de suivi comprise,
+          # parce que c'est l'échéance de revue qui empêche l'alerte de devenir éternelle.
+          - exp_labels:
+              severity: dette
+            exp_annotations:
+              summary: "Aucune sauvegarde ne déclare jamais son succès"
+              description: "La série `backup_last_success_timestamp_seconds` n'existe pas : la surveillance des sauvegardes est inopérante, quelle que soit la réalité des sauvegardes. Brancher le collecteur textfile de node-exporter et faire écrire l'horodatage par le travail de sauvegarde. Tant que cette alerte sonne, `SauvegardeAbsente` ne peut pas sonner."
+              suivi: "Lacune d'instrumentation du dépôt observé, constat C-236 du 11/09/2026 (scripts/backup-databases.sh : `|| true` avale l'échec, aucune métrique écrite). Échéance de revue : 15/12/2026. Passé cette date, trancher — instrumenter le travail de sauvegarde, ou retirer les deux règles — plutôt que de laisser cette alerte se répéter indéfiniment."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sauvegardejamaisdeclaree"
+      - eval_time: 7h
+        alertname: SauvegardeAbsente
+        exp_alerts: []
+
+  # ② Dès que le travail écrit son horodatage, la déclaration se tait et c'est la fraîcheur
+  #    qui est surveillée (`time()` démarre à l'époque 0 dans un test promtool).
+  - interval: 5m
+    name: "une sauvegarde declaree mais trop ancienne declenche une page"
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{instance="hote:9100",job="node"}'
+        values: "-100000+0x100"
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: SauvegardeJamaisDeclaree
+        exp_alerts: []
+      - eval_time: 7h
+        alertname: SauvegardeAbsente
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              instance: "hote:9100"
+              job: node
+            exp_annotations:
+              summary: "Dernière sauvegarde réussie il y a 1d 10h 46m 40s"
+              description: "Aucune sauvegarde n'a abouti depuis plus de 26 heures. Vérifier le travail planifié AVANT d'en lancer une à la main : une sauvegarde manuelle qui réussit éteint l'alerte sans corriger la cause, et masque la panne jusqu'au prochain incident réel."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sauvegardeabsente"

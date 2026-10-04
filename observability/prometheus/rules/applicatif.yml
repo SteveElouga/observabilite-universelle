@@ -1,9 +1,14 @@
 # prometheus/rules/applicatif.yml — alertes sur les composants applicatifs OBSERVÉS (§8.4)
 #
-# Ces trois règles dépendent de cibles optionnelles (prometheus/targets/). Tant que le
-# consommateur ne fournit pas d'adresse, aucune série n'existe et les règles restent muettes.
-# Elles sont écrites malgré tout, et c'est délibéré : une règle absente se redécouvre le jour de
-# l'incident, une règle muette s'allume seule le jour du branchement.
+# Trois des quatre règles ci-dessous dépendent de cibles optionnelles (prometheus/targets/) ou
+# d'un producteur externe. Tant que le consommateur ne fournit rien, aucune série n'existe et
+# elles restent muettes. Elles sont écrites malgré tout, et c'est délibéré : une règle absente
+# se redécouvre le jour de l'incident, une règle muette s'allume seule le jour du branchement.
+#
+# La quatrième — `SauvegardeJamaisDeclaree` — fait exactement l'inverse : elle DÉCLARE le trou
+# au lieu d'attendre qu'il se comble, parce qu'une surveillance qui ne peut pas se déclencher
+# rassure à tort. Elle est donc vraie en permanence aujourd'hui, d'où sa gravité `dette` : hors
+# du canal d'incident, une fois par semaine, avec une échéance de revue (voir alertmanager.yml).
 groups:
   - name: courtier-de-messages
     rules:
@@ -44,8 +49,49 @@ groups:
     rules:
       # La sauvegarde ne s'observe pas : elle se DÉCLARE. Le travail de sauvegarde écrit son
       # horodatage de succès dans un fichier .prom déposé dans le répertoire textfile de
-      # node-exporter (/var/lib/obs/textfile), par exemple :
+      # node-exporter, par exemple :
       #     backup_last_success_timestamp_seconds 1754697600
+      #
+      # ⚠ CE RÉPERTOIRE N'EST PAS LE MÊME DANS LES DEUX MODES (corrigé le 15/09/2026 : le
+      #   commentaire ne citait que le second, et envoyait l'exploitant déposer son .prom au
+      #   mauvais endroit — l'alerte continuait alors de sonner sans raison compréhensible) :
+      #     · compose : /var/lib/node_exporter/textfile, alimenté par le volume nommé
+      #                 `textfile-data` (docker-compose.yml, service node-exporter). Un
+      #                 producteur externe le déclare :
+      #                   volumes: [{ name: observability_textfile-data, external: true }]
+      #     · image   : /var/lib/obs/textfile (docker/supervisord.conf, programme node-exporter).
+      #   Dans les deux cas, écriture ATOMIQUE obligatoire (écrire à côté puis `mv`) : sans
+      #   quoi node-exporter peut lire un fichier à moitié écrit.
+      #
+      # LA RÈGLE QUI MANQUAIT, ajoutée le 14/09/2026. `SauvegardeAbsente` ci-dessous est
+      # muette tant que la série n'existe pas — et elle n'existait PAS : le travail de
+      # sauvegarde du consommateur (scripts/backup-databases.sh) n'écrit aucun fichier .prom
+      # (audit du 11/09/2026, constat C-236). Une surveillance qui ne peut pas se déclencher
+      # est pire qu'aucune : elle rassure. Celle-ci déclare le trou plutôt que de le taire.
+      #
+      # `severity: dette` et non `ticket` (corrigé le 15/09/2026) : c'est une lacune
+      # d'instrumentation, pas un incident. Routée vers le canal de dette technique et répétée
+      # toutes les semaines au lieu de toutes les 24 h, elle reste visible sans redevenir le
+      # bruit récurrent que C-354 vient précisément de nettoyer (voir alertmanager.yml).
+      - alert: SauvegardeJamaisDeclaree
+        expr: absent(backup_last_success_timestamp_seconds)
+        for: 6h
+        labels: { severity: dette }
+        annotations:
+          summary: "Aucune sauvegarde ne déclare jamais son succès"
+          description: >-
+            La série `backup_last_success_timestamp_seconds` n'existe pas : la surveillance des
+            sauvegardes est inopérante, quelle que soit la réalité des sauvegardes. Brancher le
+            collecteur textfile de node-exporter et faire écrire l'horodatage par le travail de
+            sauvegarde. Tant que cette alerte sonne, `SauvegardeAbsente` ne peut pas sonner.
+          suivi: >-
+            Lacune d'instrumentation du dépôt observé, constat C-236 du 11/09/2026
+            (scripts/backup-databases.sh : `|| true` avale l'échec, aucune métrique écrite).
+            Échéance de revue : 15/12/2026. Passé cette date, trancher — instrumenter le
+            travail de sauvegarde, ou retirer les deux règles — plutôt que de laisser cette
+            alerte se répéter indéfiniment.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#sauvegardejamaisdeclaree"
+
       # 26 heures et non 24 : une sauvegarde quotidienne qui glisse de deux heures reste saine,
       # et une alerte qui sonne à chaque décalage bénin finit par ne plus être lue.
       - alert: SauvegardeAbsente

@@ -25,7 +25,20 @@ datasources:
       # LOG → TRACE : le trace_id du JSON (§10.1) devient un lien cliquable
       derivedFields:
         - name: TraceID
-          matcherRegex: '"trace_id":\s*"(\w+)"'   # \s* : le JSON de Python écrit "trace_id": "..." (espace après les deux-points)
+          # `\s*` : le JSON de Python écrit "trace_id": "..." (espace après les deux-points).
+          #
+          # LE MOTIF EXCLUT L'IDENTIFIANT NUL, et c'est la correction du 14/09/2026. Avec
+          # `(\w+)`, les lignes émises HORS d'une requête tracée — démarrage, tâches planifiées,
+          # access logs — portent `"trace_id": "00000000000000000000000000000000"` (identifiant
+          # nul d'OpenTelemetry) et recevaient quand même un bouton « Voir la trace » : un lien
+          # mort vers une trace qui n'a jamais existé.
+          #
+          # `0*[1-9a-f][0-9a-f]*` = au moins un caractère non nul, donc l'identifiant nul ne
+          # correspond plus, tandis qu'un identifiant légitime commençant par des zéros reste
+          # capturé en entier (le groupe englobe les zéros de tête). Pas d'anti-référence
+          # `(?!0{32})` à dessein : ni RE2 (Go) ni le moteur de certaines versions de Grafana
+          # ne la garantissent, ce motif-ci fonctionne partout.
+          matcherRegex: '"trace_id":\s*"(0*[1-9a-f][0-9a-f]*)"'
           url: '$${__value.raw}'          # $$ = échappement du provisioning Grafana
           datasourceUid: tempo
           urlDisplayLabel: "Voir la trace"
@@ -41,14 +54,39 @@ datasources:
         spanStartTimeShift: "-5m"
         spanEndTimeShift: "5m"
         filterByTraceID: true
+        # `tags` EXPLICITE, et c'est la correction du 14/09/2026. Sans cette clé, Grafana
+        # applique ses étiquettes par défaut — `service.name` → `service_name` ET
+        # `service.namespace` → `service_namespace` — et compose la requête
+        # `{service_name="gateway", service_namespace="sgfe"}`. Or les flux Loki issus
+        # d'Alloy ne portent pas `service_namespace` (un conteneur Docker n'a pas de
+        # notion d'espace de noms OTel) : la requête ne rendait AUCUN flux et le bouton
+        # « logs de ce span » restait vide.
+        #
+        # On ne garde donc que le pivot réellement présent des deux côtés : `service.name`
+        # sur le span ↔ `service_name` sur le flux (posé par discovery.relabel dans
+        # alloy-config.alloy à partir du nom de service Compose).
+        tags:
+          - { key: "service.name", value: "service_name" }
       # TRACE → CARTE DES SERVICES : nourrie par les connecteurs du Collector (§10.3)
       serviceMap: { datasourceUid: prometheus }
       nodeGraph: { enabled: true }
       lokiSearch: { datasourceUid: loki }
-      # TRACE → PROFIL : bouton "profil de ce span" (requiert le SDK Pyroscope, §10.1)
+      # TRACE → PROFIL : bouton « Profiles for this span ».
+      #
+      # LIMITE ASSUMÉE ET DOCUMENTÉE. Le flame graph EMBARQUÉ dans le détail du span exige
+      # que le span porte l'attribut `pyroscope.profile.id`, posé par le processeur de span
+      # `pyroscope-otel` — que le SDK `pyroscope-io` seul NE POSE PAS. Sans lui, le bouton
+      # existait mais ouvrait un profil non ciblé, ce qui ressemblait à une panne.
+      #
+      # `tags` rend le lien honnête : à défaut de profil du span exact, Grafana ouvre le
+      # profil du MÊME SERVICE sur la fenêtre de temps du span — utile, et sans promesse
+      # qu'on ne tient pas. Pour le flame graph par span, ajouter `pyroscope-otel` côté SDK
+      # applicatif (voir runbooks/README.md § « Trace → profil »).
       tracesToProfiles:
         datasourceUid: pyroscope
         profileTypeId: "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+        tags:
+          - { key: "service.name", value: "service_name" }
 
   - name: Pyroscope
     uid: pyroscope

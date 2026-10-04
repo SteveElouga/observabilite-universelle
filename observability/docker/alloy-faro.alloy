@@ -26,7 +26,17 @@ faro.receiver "web" {
   }
 }
 
+// Repris à l'identique de l'amont (alloy-config.alloy) : sans `service_name`, Loki dérive
+// `service_name="unknown_service"` pour tout le RUM, et la corrélation trace → journaux du
+// front est morte. Le récepteur Faro écrit en logfmt, métadonnées d'application préfixées
+// `app_` (voir le commentaire détaillé en amont).
 loki.process "faro" {
+  stage.logfmt {
+    mapping = { "app_name" = "", "app_namespace" = "" }
+  }
+  stage.labels {
+    values = { service_name = "app_name", service_namespace = "app_namespace" }
+  }
   stage.static_labels {
     values = { source = "faro" }
   }

@@ -1,0 +1,27 @@
+# prometheus/rules/veilleuse.yml — le « dead man's switch » de la chaîne d'alerte.
+#
+# Toutes les autres règles détectent une panne du système observé. Celle-ci détecte une panne
+# du système d'OBSERVATION : elle est TOUJOURS active, par construction, et doit donc arriver
+# toutes les cinq minutes chez un surveillant EXTERNE (battement de cœur OneUptime,
+# Healthchecks.io, moniteur « push » d'Uptime Kuma). C'est son SILENCE qui est le signal.
+#
+# Pourquoi elle manquait cruellement : entre le 8 et le 11/09/2026, Prometheus a évalué des
+# alertes, Alertmanager les a groupées, et AUCUNE n'a atteint qui que ce soit (secret de
+# webhook absent, DNS injoignable). Rien, dans la plateforme, ne pouvait le dire — parce que
+# rien n'attendait de nouvelle. SOC 2 CC7.2/CC7.3 exige l'inverse : la détection doit être
+# elle-même surveillée.
+groups:
+  - name: veilleuse
+    rules:
+      - alert: ChaineAlertingVivante
+        expr: vector(1)
+        for: 0m
+        labels: { severity: veilleuse }
+        annotations:
+          summary: "Battement de cœur de la chaîne d'alerte"
+          description: >-
+            Cette alerte est active en permanence et ne demande AUCUNE action. Son absence
+            pendant plus de dix minutes chez le surveillant externe signifie que Prometheus,
+            Alertmanager ou le canal de notification est tombé : plus aucune alerte réelle ne
+            peut arriver. Câblage : alertmanager/secrets/veilleuse_webhook_url.
+          runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#chainealertingvivante"

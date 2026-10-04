@@ -1,0 +1,110 @@
+# tests/prometheus/collecte_test.yml — `promtool test rules`
+# Prouve les corrections C-353 (pertes de télémétrie invisibles) et C-042 (notifications
+# d'alerte en échec invisibles) : ces deux pannes silencieuses déclenchent désormais.
+rule_files:
+  - ../../prometheus/rules/collecte.yml
+  - ../../prometheus/rules/veilleuse.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ① Le Collector jette des points de métrique (« Exporting failed. Dropping data »).
+  - interval: 1m
+    name: "des metriques jetees par le collector declenchent un ticket"
+    input_series:
+      - series: 'otelcol_exporter_send_failed_metric_points{exporter="prometheusremotewrite",job="otel-collector"}'
+        values: "0+630x20"
+      - series: 'otelcol_exporter_send_failed_spans{exporter="otlp/tempo",job="otel-collector"}'
+        values: "0+0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TelemetrieMetriquesPerdues
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              exporter: prometheusremotewrite
+            exp_annotations:
+              summary: "Collector : l'exportateur prometheusremotewrite jette des métriques"
+              description: "Des points de métrique sont rejetés depuis dix minutes. Cause la plus fréquente : le backend de destination met plus longtemps que `timeout` à accepter un lot (saturation disque ou CPU de l'hôte). Vérifier d'abord le remplissage disque, puis la taille de la file d'export (`otelcol_exporter_queue_size`)."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#telemetriemetriquesperdues"
+      - eval_time: 15m
+        alertname: TelemetrieTracesPerdues
+        exp_alerts: []
+
+  # ② Un export sain ne doit rien déclencher.
+  - interval: 1m
+    name: "un export sain ne declenche rien"
+    input_series:
+      - series: 'otelcol_exporter_send_failed_metric_points{exporter="prometheusremotewrite",job="otel-collector"}'
+        values: "0+0x20"
+      - series: 'otelcol_exporter_queue_size{exporter="prometheusremotewrite",job="otel-collector"}'
+        values: "100+0x20"
+      - series: 'otelcol_exporter_queue_capacity{exporter="prometheusremotewrite",job="otel-collector"}'
+        values: "50000+0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TelemetrieMetriquesPerdues
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: FileExportCollectorPresqueSaturee
+        exp_alerts: []
+
+  # ③ La file d'export se remplit : on prévient AVANT de jeter.
+  - interval: 1m
+    name: "une file d export a quatre vingt dix pour cent declenche un ticket"
+    input_series:
+      - series: 'otelcol_exporter_queue_size{exporter="prometheusremotewrite",job="otel-collector"}'
+        values: "45000+0x20"
+      - series: 'otelcol_exporter_queue_capacity{exporter="prometheusremotewrite",job="otel-collector"}'
+        values: "50000+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FileExportCollectorPresqueSaturee
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              exporter: prometheusremotewrite
+              job: otel-collector
+            exp_annotations:
+              summary: "Collector : file d'export prometheusremotewrite à 90%"
+              description: "Le Collector accumule plus vite qu'il n'exporte. Au plein, les lots suivants sont jetés. Agir sur la destination (disque, CPU) ou augmenter `remote_write_queue`."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#fileexportcollectorpresquesaturee"
+
+  # ④ LE cas de l'incident C-042 : Alertmanager n'arrive pas à notifier (webhook dont le
+  #    secret manque). Personne ne le savait ; désormais cela sonne en `page`.
+  - interval: 1m
+    name: "des notifications d alerte en echec declenchent une page"
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{integration="webhook",reason="other",job="alertmanager"}'
+        values: "0+2x20"
+      - series: 'alertmanager_notifications_failed_total{integration="slack",reason="other",job="alertmanager"}'
+        values: "0+0x20"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: NotificationsDAlerteEnEchec
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              integration: webhook
+            exp_annotations:
+              summary: "Alertmanager : l'intégration webhook n'arrive pas à notifier"
+              description: "Des notifications échouent depuis dix minutes : la détection fonctionne, la transmission non. Lire `docker logs` d'Alertmanager pour la cause exacte (secret absent, DNS, 4xx du destinataire) et vérifier que le canal de secours (e-mail) reste, lui, opérationnel."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#notificationsdalerteenechec"
+
+  # ⑤ La veilleuse est active en permanence, sans aucune série d'entrée : c'est son silence
+  #    chez le surveillant externe qui constitue le signal.
+  - interval: 1m
+    name: "la veilleuse est toujours active"
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: "1+0x10"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ChaineAlertingVivante
+        exp_alerts:
+          - exp_labels:
+              severity: veilleuse
+            exp_annotations:
+              summary: "Battement de cœur de la chaîne d'alerte"
+              description: "Cette alerte est active en permanence et ne demande AUCUNE action. Son absence pendant plus de dix minutes chez le surveillant externe signifie que Prometheus, Alertmanager ou le canal de notification est tombé : plus aucune alerte réelle ne peut arriver. Câblage : alertmanager/secrets/veilleuse_webhook_url."
+              runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#chainealertingvivante"

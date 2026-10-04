@@ -47,14 +47,23 @@ if [ -f /var/lib/obs/grafana/grafana.db ]; then
 fi
 
 # 3. Le webhook Slack d'Alertmanager n'est PAS une variable d'environnement : Alertmanager ne
-#    les lit pas. Le socle attend un fichier, délibérément hors image. S'il est monté, tant
-#    mieux ; sinon on écrit un fichier vide pour qu'Alertmanager démarre au lieu d'échouer.
+#    les lit pas. Le socle attend un fichier, délibérément hors image.
+#
+#    ⚠ CORRECTION DU 14/09/2026 : écrire un fichier VIDE ne suffisait pas et masquait le
+#    problème. Alertmanager lit `url_file`/`api_url_file` AU MOMENT DE NOTIFIER : un fichier
+#    vide produit un échec de notification à chaque alerte, exactement comme un fichier
+#    absent (1 447 échecs en 72 h constatés en recette). La configuration effective est donc
+#    désormais RENDUE par alertmanager/render-config.sh, qui n'insère une intégration que si
+#    son secret existe ET n'est pas vide. On ne crée plus de fichier vide.
 mkdir -p /etc/alertmanager/secrets
-for secret in slack_webhook_url oneuptime_webhook_url; do
-  # oneuptime_webhook_url manquait ici alors qu'alertmanager.yml le référence pour la garde
-  # (receiver « page-oncall »). Même traitement que Slack : fichier vide plutôt qu'un refus.
-  [ -f "/etc/alertmanager/secrets/$secret" ] || : > "/etc/alertmanager/secrets/$secret"
-done
+ALERTMANAGER_RENDERED_CONFIG=${ALERTMANAGER_RENDERED_CONFIG:-/var/lib/obs/alertmanager/alertmanager.yml}
+export ALERTMANAGER_RENDERED_CONFIG
+# /var/lib/obs est un VOLUME : un volume préexistant, créé par une version antérieure de
+# l'image, n'a pas forcément ce sous-répertoire. Sans lui le rendu échoue et le conteneur
+# entier refuse de démarrer, pour une raison sans rapport visible avec l'alerting.
+mkdir -p "$(dirname "$ALERTMANAGER_RENDERED_CONFIG")"
+sh /etc/alertmanager/render-config.sh
+chown obs:obs "$ALERTMANAGER_RENDERED_CONFIG"
 
 # 3 bis. postgres_exporter ne démarre que branché. Sans chaîne de connexion il sort aussitôt, et
 #        supervisord le relancerait sans fin : une fausse panne qui masque les vraies. On décide
@@ -85,11 +94,41 @@ ecrire_cible() {   # $1 = nom du fichier, $2 = adresse hôte:port, $3 = étiquet
 ecrire_cible rabbitmq "${RABBITMQ_METRICS_TARGET:-}" rabbitmq
 ecrire_cible keycloak "${KEYCLOAK_METRICS_TARGET:-}" keycloak
 
+# Passerelle GraphQL du consommateur, sondée par `{__typename}` (module http_graphql). Cette
+# cible était VERSIONNÉE en dur jusqu'au 15/09/2026 : partout où le consommateur ne tourne pas
+# sur le réseau obs-edge, elle produisait un « ProbeDown » (severity=page) permanent — le
+# défaut même que `demo.yml` venait de corriger. Elle ne s'écrit donc plus que sur demande.
+if [ -n "${SGFE_GRAPHQL_TARGET:-}" ]; then
+  printf '[{"targets":["%s"],"labels":{"role":"sgfe","composant":"gateway"}}]\n' \
+    "$SGFE_GRAPHQL_TARGET" > /etc/prometheus/targets/sgfe-graphql.yml
+  echo "sonde SGFE (passerelle GraphQL) : $SGFE_GRAPHQL_TARGET"
+fi
+
+# Sondes HTTP du consommateur qui ne sont PAS joignables par nom depuis la plateforme (elles
+# ne partagent pas le réseau obs-edge) : nginx, passerelle WhatsApp… Liste d'URLs séparées par
+# des espaces.
+if [ -n "${SGFE_PROBE_TARGETS:-}" ]; then
+  liste=""
+  for cible in $SGFE_PROBE_TARGETS; do
+    liste="${liste:+$liste,}\"$cible\""
+  done
+  printf '[{"targets":[%s],"labels":{"role":"sgfe"}}]\n' "$liste" \
+    > /etc/prometheus/targets/sgfe-http.yml
+  echo "sondes SGFE : $SGFE_PROBE_TARGETS"
+fi
+
 # Les sondes de la démonstration visent des conteneurs qui n'existent QU'EN MODE COMPOSE. Les
-# laisser actives dans l'image ferait sonner « ProbeDown » en permanence chez le consommateur —
-# constaté en recette, corrigé ici. Le fichier versionné garde les cibles pour le compose ; on
-# le vide dans l'image, sauf demande explicite.
-if [ "${DEMO_TARGETS:-false}" != "true" ]; then
+# laisser actives ferait sonner « ProbeDown » (severity=page) en permanence chez le
+# consommateur — constaté en recette.
+#
+# Depuis le 14/09/2026 le fichier VERSIONNÉ vaut « [] » : l'état par défaut est donc le bon
+# dans les deux modes, et c'est l'activation qui est explicite (DEMO_TARGETS=true ici, service
+# `demo-targets` du profil `demo` en compose). On écrit plutôt que d'effacer : un défaut sûr
+# ne doit jamais dépendre d'un nettoyage qui pourrait ne pas s'exécuter.
+if [ "${DEMO_TARGETS:-false}" = "true" ] && [ -f /etc/prometheus/targets/demo.yml.example ]; then
+  cp /etc/prometheus/targets/demo.yml.example /etc/prometheus/targets/demo.yml
+  echo "cibles de démonstration activées (DEMO_TARGETS=true)."
+else
   printf '[]\n' > /etc/prometheus/targets/demo.yml
 fi
 

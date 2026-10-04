@@ -615,9 +615,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 - (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|ramfs\"} / node_filesystem_size_bytes * 100)",
+          "expr": "instance:systeme_fichiers_rempli:ratio",
           "editorMode": "code",
-          "legendFormat": "{{mountpoint}}",
+          "legendFormat": "{{instance}} {{mountpoint}}",
           "instant": false,
           "range": true
         }
@@ -667,7 +667,7 @@
           "sort": "desc"
         }
       },
-      "description": "Alerte à 80 % (avertissement) et 90 % (critique) — §8.4."
+      "description": "Une seule définition du filtre, partagée avec les alertes DisqueBientotPlein et DisquePresquePlein : la règle d'enregistrement `instance:systeme_fichiers_rempli:ratio` (prometheus/rules/infra.yml).\n\nElle écarte les systèmes de fichiers virtuels de la VM Docker Desktop — la racine `erofs` en lecture seule à 100 % et les montages `virtiofs`/`fakeowner` qui répétaient cinq fois le même remplissage — pour ne montrer que les volumes où l'on peut réellement libérer de la place."
     },
     {
       "type": "timeseries",

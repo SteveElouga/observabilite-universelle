@@ -7,12 +7,43 @@
 #      Avant toute exposition réelle : durcissement §7.4 (branche feature/hardening).
 #
 # Prérequis : cp .env.example .env (et remplir) — voir observability/README.md.
+#
+# ── Mémoire et redémarrage : deux moitiés d'une MÊME protection ──────────────────────────
+# `mem_limit` est un PLAFOND PAR CONTENEUR, pas une réservation : il fait tuer le conteneur
+# qui dérape avant que le noyau ne choisisse lui-même sa victime — mais il ne fait revenir
+# personne. Le 12/09/2026, Loki, Tempo et Pyroscope sont sortis en code 137 (OOMKilled) et
+# sont restés arrêtés TROIS JOURS : aucun journal, aucune trace, aucun profil, et personne
+# pour s'en apercevoir, parce qu'aucun service durable ne portait de politique de
+# redémarrage. Poser un plafond sans reprise n'avance que l'heure de la mort.
+#
+# D'où `restart: unless-stopped` sur TOUS les services durables : la politique « restarts the
+# container irrespective of the exit code but stops restarting when the service is stopped or
+# removed » (documentation Compose, docs.docker.com/reference/compose-file/services/) relance
+# après une mort accidentelle ET au redémarrage du démon, mais respecte un `docker compose
+# stop` explicite. Les trois services one-shot (`demo-targets`, `sgfe-targets`,
+# `glitchtip-migrate`) gardent `restart: "no"` : les relancer en boucle n'aurait aucun sens.
+#
+# Ordre de grandeur à surveiller avant de toucher aux plafonds : leur somme vaut ≈ 6,5 Gio
+# (768 Mio + 2 Gio + 3 × 1 Gio + 512 Mio + 256 Mio) pour une VM Docker de 7,75 Gio sur ce
+# poste, partagée avec une quarantaine de conteneurs SGFE. Comme un plafond ne réserve rien,
+# l'OOM killer de l'hôte frappe malgré eux dès que la somme des consommations RÉELLES dépasse
+# la VM : la reprise automatique borne alors l'incident à quelques secondes, mais seule une VM
+# correctement dimensionnée (Docker Desktop → Settings → Resources) le fait disparaître.
 
 services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.116.1
+    restart: unless-stopped
     command: ["--config=/etc/otelcol/config.yaml"]
-    environment: { DEPLOY_ENV: "prod" }
+    # DEPLOY_ENV n'est plus qu'un DÉFAUT depuis le 14/09/2026 : le processeur `resource`
+    # utilise `action: insert` et ne peut plus écraser le `deployment.environment` envoyé par
+    # un SDK (voir otel-collector-config.yaml). Valeur volontairement laissée à « prod » : elle
+    # ne s'applique qu'aux émetteurs qui ne déclarent rien.
+    environment: { DEPLOY_ENV: "${DEPLOY_ENV:-prod}" }
+    # Plafond de conteneur AU-DESSUS du plafond logiciel (memory_limiter: 512 Mio + 128 de
+    # pointe) : le Collector doit refuser des lots AVANT que le noyau ne le tue. Sans limite,
+    # Loki, Tempo et Pyroscope ont été tués par l'OOM killer de l'hôte (code 137) le 12/09.
+    mem_limit: 768m
     volumes: ["./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro"]
     ports: ["4317:4317", "4318:4318"]        # OTLP gRPC / HTTP (vos apps pointent ici, jamais les backends)
     depends_on: [tempo, loki, prometheus]
@@ -21,12 +52,56 @@ services:
     # SGFE-backend), qui le déclarent `external: true` — voir leur propre fichier.
     networks: [default, obs-edge]
 
+  # ---- ACTIVATION DES SONDES OPTIONNELLES (profils "demo" et "sgfe") ----
+  # Toutes les cibles VERSIONNÉES valent « [] » : une cible en dur mais injoignable rend la
+  # sonde réellement en échec et « ProbeDown » (severity=page) sonne en permanence chez qui ne
+  # fait pas tourner ces conteneurs — deux alertes fantômes qui, faute de `service_name`,
+  # inhibaient au passage tous les tickets sans service (voir alertmanager.yml). C'est donc
+  # l'ACTIVATION qui est explicite, jamais la désactivation.
+  #
+  # Les deux services one-shot ci-dessous écrivent un fichier « *.local.yml », ignoré par Git
+  # (.gitignore racine : `observability/**/*.local.*`) et repris par Prometheus grâce au motif
+  # `demo*.yml` / `sgfe-graphql*.yml` des `file_sd_configs`. Auparavant, `demo-targets`
+  # recopiait ses cibles SUR le fichier versionné : une démonstration laissait le dépôt sale et
+  # un `git add -A` distrait y remettait les cibles en dur — le défaut même qu'on venait de
+  # corriger. Aucun conteneur n'écrit plus dans un fichier suivi par Git.
+  demo-targets:
+    profiles: ["demo"]
+    image: busybox:1.37
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - 'cp /src/demo.yml.example /out/demo.local.yml && echo "cibles de démonstration activées"'
+    volumes:
+      - ./prometheus/targets/demo.yml.example:/src/demo.yml.example:ro
+      - ./prometheus/targets:/out
+
+  # Sonde de la passerelle GraphQL du consommateur (SGFE). Même règle que la démo, et pour la
+  # même raison : `gateway` n'est joignable que là où le projet consommateur tourne et partage
+  # le réseau `obs-edge`. Sur un poste qui ne fait tourner que le socle, une cible en dur
+  # produirait une page permanente. Activation : `docker compose --profile sgfe up -d`
+  # (en mode image, c'est la variable SGFE_GRAPHQL_TARGET que lit docker/entrypoint.sh).
+  sgfe-targets:
+    profiles: ["sgfe"]
+    image: busybox:1.37
+    restart: "no"
+    environment:
+      SGFE_GRAPHQL_TARGET: "${SGFE_GRAPHQL_TARGET:-http://gateway:8000/graphql}"
+    command:
+      - sh
+      - -c
+      - 'printf ''[{"targets":["%s"],"labels":{"role":"sgfe","composant":"gateway"}}]\n'' "$$SGFE_GRAPHQL_TARGET" > /out/sgfe-graphql.local.yml && echo "sonde SGFE activée : $$SGFE_GRAPHQL_TARGET"'
+    volumes:
+      - ./prometheus/targets:/out
+
   # ---- DÉMO (profil "demo", opt-in) : app Django instrumentée (§10.1) ----
   # Émet réellement traces + métriques + logs vers le Collector, pour valider la plateforme
   # de bout en bout. Ne tourne QUE si le profil est activé : docker compose --profile demo up.
   units-service:
     profiles: ["demo"]
     build: { context: ../demo/units-service }
+    restart: unless-stopped
     environment:
       DJANGO_SETTINGS_MODULE: units_project.settings   # requis dans l'env AVANT opentelemetry-instrument, sinon Django charge des settings vides
       OTEL_SERVICE_NAME: units-service
@@ -47,35 +122,50 @@ services:
   units-webapp:
     profiles: ["demo"]
     build: { context: ../demo/units-webapp }
+    restart: unless-stopped
     ports: ["8090:8080"]               # nginx non-root écoute sur 8080 dans le conteneur
     depends_on: [units-service, alloy]
 
   prometheus:
     image: prom/prometheus:v3.1.0
+    restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=15d
+      # 90 jours et non 15 : c'est la politique de conservation documentée du consommateur et
+      # le minimum d'une période d'observation SOC 2 Type II. Le plafond de TAILLE est le
+      # garde-fou — Prometheus supprime les blocs les plus anciens dès que l'un des deux
+      # seuils est atteint, ce qui évite qu'une rétention plus longue ne remplisse le disque
+      # (l'hôte était à 89,6 % le 11/09).
+      - --storage.tsdb.retention.time=90d
+      - --storage.tsdb.retention.size=20GB
       - --web.enable-remote-write-receiver     # reçoit les métriques du Collector
       - --enable-feature=exemplar-storage      # les exemplars = lien métrique → trace
     volumes: ["./prometheus:/etc/prometheus:ro", "prom-data:/prometheus"]
     ports: ["9090:9090"]
+    mem_limit: 2g
 
   loki:
     image: grafana/loki:3.3.2
+    restart: unless-stopped
     command: ["-config.file=/etc/loki/config.yaml"]
     volumes: ["./loki-config.yaml:/etc/loki/config.yaml:ro", "loki-data:/loki"]
     ports: ["3100:3100"]
+    mem_limit: 1g
 
   tempo:
     image: grafana/tempo:2.7.0
+    restart: unless-stopped
     command: ["-config.file=/etc/tempo/config.yaml"]
     volumes: ["./tempo-config.yaml:/etc/tempo/config.yaml:ro", "tempo-data:/var/tempo"]
     ports: ["3200:3200"]
+    mem_limit: 1g
 
   pyroscope:                                   # profiling continu (§4.9) — config par défaut suffisante
     image: grafana/pyroscope:1.10.0
+    restart: unless-stopped
     volumes: ["pyro-data:/data"]
     ports: ["4040:4040"]                       # les SDK poussent ici (§10.1)
+    mem_limit: 1g
     # Rejoint aussi obs-edge (réseau partagé, méthode 2) : contrairement aux
     # traces/métriques/logs (OTLP via otel-collector), le profiling Pyroscope
     # fonctionne en push HTTP direct du SDK vers PYROSCOPE_SERVER_ADDRESS — il
@@ -87,6 +177,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.4.0
+    restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
@@ -95,28 +186,87 @@ services:
     # (voir docker-compose.yml de SGFE-backend, service whatsapp-service, "3000:3000")
     ports: ["3030:3000"]
 
+  # LA CHAÎNE D'ALERTE, corrigée le 14/09/2026. Trois défauts la rendaient totalement muette :
+  #   1. `alertmanager.yml` référençait en dur un secret de webhook absent → chaque alerte
+  #      `page` échouait en « unrecoverable error » (1 447 échecs en 72 h). Corrigé par
+  #      `render-config.sh`, qui n'insère une intégration QUE si son secret existe.
+  #   2. Le conteneur ne résolvait pas `hooks.slack.com` (« no such host ») : sur un réseau
+  #      défini par l'utilisateur, le résolveur intégré de Docker (127.0.0.11) transfère les
+  #      requêtes externes aux serveurs configurés — `dns:` fixe ces serveurs amont sans
+  #      casser la résolution des noms de services. Mettre ALERTMANAGER_DNS à vide n'est pas
+  #      possible en Compose : poser la valeur du résolveur du site si 1.1.1.1 est filtré.
+  #   3. Aucun canal de secours : si Slack tombe, plus rien ne part. Renseigner les quatre
+  #      variables ALERT_* et le secret `smtp_password` ajoute un e-mail indépendant.
   alertmanager:
     image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/alertmanager/render-config.sh"]
+    command:
+      - --config.file=/tmp/alertmanager.yml
+      - --storage.path=/alertmanager
+    environment:
+      ALERT_EMAIL_TO: "${ALERT_EMAIL_TO:-}"
+      ALERT_EMAIL_FROM: "${ALERT_EMAIL_FROM:-}"
+      ALERT_SMTP_SMARTHOST: "${ALERT_SMTP_SMARTHOST:-}"
+      ALERT_SMTP_USERNAME: "${ALERT_SMTP_USERNAME:-}"
+      # Canal des incidents, et canal de la dette d'instrumentation (severity=dette) : deux
+      # règles y déclarent un trou de surveillance et sont vraies en permanence, elles n'ont
+      # rien à faire dans le canal qu'on vient de nettoyer (C-354). Voir alertmanager.yml.
+      ALERT_SLACK_CHANNEL: "${ALERT_SLACK_CHANNEL:-#alertes}"
+      ALERT_SLACK_CHANNEL_DETTE: "${ALERT_SLACK_CHANNEL_DETTE:-#dette-technique}"
+    dns: ${ALERTMANAGER_DNS:-1.1.1.1}
     volumes: ["./alertmanager:/etc/alertmanager:ro"]   # inclut secrets/slack_webhook_url (hors Git)
     ports: ["9093:9093"]
+    mem_limit: 256m
 
   alloy:                                       # 2 rôles : logs des conteneurs + récepteur Faro
     image: grafana/alloy:v1.6.1
+    restart: unless-stopped
     command: ["run", "/etc/alloy/config.alloy"]
+    environment:
+      # Expression régulière du/des projet(s) Compose dont les journaux sont ingérés. Défaut
+      # `.+` : tout conteneur appartenant à un projet Compose, donc plus aucun `docker run`
+      # isolé. Sur le poste de recette, 84 conteneurs de projets tiers finissaient dans un
+      # Loki mono-tenant sans authentification — restreindre, par exemple à
+      # « sgfe-.*|observability ». Voir alloy-config.alloy.
+      LOGS_COMPOSE_PROJECTS: "${LOGS_COMPOSE_PROJECTS:-.+}"
     volumes:
       - ./alloy-config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports: ["12347:12347"]                     # endpoint Faro (§10.2)
+    mem_limit: 512m
 
   node-exporter:
     image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
     pid: host
-    volumes: ["/:/host:ro"]                   # sans "rslave" : Docker Desktop (Mac/Win) n'a pas de mount slave sur /
-    command: ["--path.rootfs=/host"]
+    volumes:
+      - "/:/host:ro"                          # sans "rslave" : Docker Desktop (Mac/Win) n'a pas de mount slave sur /
+      - "textfile-data:/var/lib/node_exporter/textfile"
+    command:
+      - --path.rootfs=/host
+      # LE COLLECTEUR QUI MANQUAIT. Sans ce drapeau, node-exporter n'a AUCUN répertoire
+      # textfile : les métriques « déclarées » par un travail externe — au premier chef
+      # `backup_last_success_timestamp_seconds`, sur laquelle repose l'alerte
+      # SauvegardeAbsente — ne pouvaient physiquement pas exister. L'alerte était donc muette
+      # par construction, quoi que fasse le travail de sauvegarde.
+      #
+      # Un producteur (travail de sauvegarde, tâche planifiée) déclare le même volume :
+      #   volumes: [{ name: observability_textfile-data, external: true }]
+      # puis y dépose un fichier .prom :
+      #   echo 'backup_last_success_timestamp_seconds '"$(date +%s)" > /textfile/backup.prom.$$
+      #   mv /textfile/backup.prom.$$ /textfile/backup.prom     # écriture atomique, obligatoire
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
 
   blackbox-exporter:
     image: prom/blackbox-exporter:v0.25.0
+    restart: unless-stopped
     volumes: ["./blackbox.yml:/etc/blackbox_exporter/config.yml:ro"]
+    # Rejoint obs-edge pour pouvoir sonder les surfaces HTTP du projet consommateur par NOM
+    # (`http://gateway:8000/graphql`). Sans cela, la plateforme ne sondait que ses propres
+    # composants et une démo : l'application réelle n'était surveillée par aucune sonde.
+    # Vérifié le 14/09/2026 depuis ce réseau : probe_success 1, probe_http_status_code 200.
+    networks: [default, obs-edge]
 
   # Métriques PostgreSQL de l'APPLICATION observée — connexions, requêtes lentes, taille des
   # bases, locks (§8.3 du DAT consommateur). L'exportateur vit ici, pas chez le consommateur :
@@ -124,6 +274,7 @@ services:
   # Sans DATA_SOURCE_NAME, le conteneur s'arrête — d'où le profil : on ne le démarre que branché.
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.16.0
+    restart: unless-stopped
     profiles: [pg]
     environment:
       # Compte en LECTURE SEULE, avec pg_monitor. Un exportateur ne doit jamais pouvoir écrire.
@@ -134,12 +285,14 @@ services:
   # HORS infra (autre machine/fournisseur) — voir uptime-kuma/README.md.
   uptime-kuma:
     image: louislam/uptime-kuma:1
+    restart: unless-stopped
     volumes: ["kuma-data:/app/data"]
     ports: ["3001:3001"]
 
   # ---- GlitchTip (erreurs & crash, §4.6) — pile minimale ----
   glitchtip-db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment: { POSTGRES_PASSWORD: "${GT_DB_PASSWORD}", POSTGRES_DB: glitchtip }
     volumes: ["gt-db:/var/lib/postgresql/data"]
     healthcheck:                               # évite que web/worker/migrate ne partent avant la base
@@ -150,9 +303,11 @@ services:
 
   glitchtip-redis:
     image: redis:7-alpine
+    restart: unless-stopped
 
   glitchtip:
     image: glitchtip/glitchtip:v4.2
+    restart: unless-stopped
     environment: &gt_env
       DATABASE_URL: postgres://postgres:${GT_DB_PASSWORD}@glitchtip-db:5432/glitchtip
       REDIS_URL: redis://glitchtip-redis:6379/0
@@ -180,6 +335,7 @@ services:
 
   glitchtip-worker:
     image: glitchtip/glitchtip:v4.2
+    restart: unless-stopped
     command: ./bin/run-celery-with-beat.sh
     environment: *gt_env
     depends_on:
@@ -189,6 +345,9 @@ services:
 
 volumes:
   prom-data: {}
+  # Répertoire d'échange du collecteur textfile de node-exporter : les travaux externes
+  # (sauvegarde, tâches planifiées) y déposent leurs métriques « déclarées ».
+  textfile-data: {}
   loki-data: {}
   tempo-data: {}
   pyro-data: {}
