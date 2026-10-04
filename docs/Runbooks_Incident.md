@@ -10,19 +10,29 @@ Les requêtes proposées s'exécutent dans Grafana, en explorateur, sur la sourc
 
 ## HighErrorRate
 
-Gravité page. L'alerte se déclenche quand plus de cinq pour cent des spans d'un service sont en erreur sur cinq minutes. C'est un symptôme utilisateur direct : une part significative des requêtes échoue.
+Gravité page. L'alerte se déclenche quand plus de cinq pour cent des requêtes servies par un service (ses spans serveur) sont en erreur sur cinq minutes. C'est un symptôme utilisateur direct : une part significative des requêtes échoue. Ses appels sortants (gRPC, SQL) n'entrent pas dans le calcul. Angle mort : un service arrêté n'émet plus de span et ne fait rien sonner, pas plus que son appelant s'il rend l'indisponibilité dans une réponse « réussie » (erreur GraphQL en HTTP 200, repli) ; les spans des consommateurs de files et du navigateur ne comptent pas non plus. Cet angle mort est couvert par HighClientErrorRate, ci-dessous : l'appelant, lui, voit ses appels sortants échouer. Reste hors champ un service arrêté que personne n'appelle (tâche planifiée, consommateur de file), dont la courbe de débit tombe à zéro sans rien faire sonner.
 
-Diagnostic. Confirmez le taux et le service avec, sur Prometheus, `sum by (service_name) (rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) / sum by (service_name) (rate(traces_span_metrics_calls_total[5m]))`. Sur l'écran RED, cliquez un exemplar de la courbe d'erreur pour ouvrir une trace en échec, ou cherchez dans Tempo les traces en erreur du service avec `{ resource.service.name = "units-service" && status = error }`. Depuis le span fautif, ouvrez ses logs pour lire le message d'erreur, puis vérifiez GlitchTip, qui regroupe les exceptions avec leur pile d'appel et la version concernée.
+Diagnostic. Confirmez le taux et le service avec, sur Prometheus, `sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m])) / sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[5m]))`. Les courbes RED ne portent pas d'exemplar (le connecteur spanmetrics ne les émet pas) : cherchez dans Tempo les traces en erreur du service avec `{ resource.service.name = "units-service" && status = error }`. Depuis le span fautif, ouvrez ses logs pour lire le message d'erreur, puis vérifiez GlitchTip, qui regroupe les exceptions avec leur pile d'appel et la version concernée.
 
 Remédiation. Si l'erreur a suivi un déploiement, revenez à la version précédente en priorité, puis corrigez à froid. Si elle vient d'une dépendance en panne, traitez la dépendance. Une fois la correction déployée, vérifiez le retour du taux d'erreur sous le seuil sur l'écran RED.
 
 Escalade. Comme c'est une alerte de niveau page, si le taux ne redescend pas rapidement ou si l'origine reste inconnue, sollicitez la personne d'astreinte. L'escalade téléphonique via OneUptime est prévue au backlog.
 
+## HighClientErrorRate
+
+Gravité page. L'alerte se déclenche quand plus de vingt-cinq pour cent des appels sortants d'un service (ses spans client) pour une même opération échouent sur cinq minutes, avec au moins dix échecs sur la fenêtre, pendant cinq minutes. Le service nommé est l'appelant, la victime ; la cause est l'appelé, désigné par l'étiquette `span_name` (méthode gRPC, requête SQL, ou pour un client HTTP souvent la seule méthode, `GET`). C'est le signal qui couvre l'angle mort de HighErrorRate : un appelé arrêté n'émet plus rien, mais son appelant voit ses appels échouer, même s'il répond 200 à son propre client.
+
+Diagnostic. Confirmez le taux avec, sur Prometheus, `sum by (service_name, span_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_CLIENT", status_code="STATUS_CODE_ERROR"}[5m])) / sum by (service_name, span_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_CLIENT"}[5m]))`. Ouvrez une trace d'échec dans Tempo avec `{ resource.service.name = "<appelant>" && kind = client && status = error }` : le span client en erreur porte l'adresse de l'appelé et le message d'erreur. Regardez ensuite l'appelé sur l'écran RED : un débit tombé à zéro signale un service arrêté ou injoignable ; un débit présent mais en erreur renvoie à HighErrorRate. Fausse alerte connue : un span client HTTP est en erreur pour toute réponse 4xx ; si la trace montre des 404 attendus (recherches sans résultat), l'appelé est sain.
+
+Remédiation. Appelé arrêté, relancez le puis cherchez pourquoi il s'est arrêté dans les journaux de son dernier démarrage. Dépendance tierce en panne, basculez sur le repli prévu. 4xx attendus, posez un silence sur ce couple appelant et opération le temps que le projet corrige son instrumentation, sans relever le seuil. Le détail est dans observability/runbooks/README.md.
+
+Escalade. Alerte de niveau page, comme HighErrorRate : si l'appelé ne repart pas rapidement, sollicitez la personne d'astreinte.
+
 ## HighLatencyP99
 
-Gravité ticket. L'alerte se déclenche quand le quatre-vingt-dix-neuvième centile de latence dépasse cinq cents millisecondes sur dix minutes. Le service répond, mais trop lentement pour une part des utilisateurs.
+Gravité ticket. L'alerte se déclenche quand le quatre-vingt-dix-neuvième centile de latence des requêtes servies (spans serveur) dépasse cinq cents millisecondes sur dix minutes. Le service répond, mais trop lentement pour une part des utilisateurs.
 
-Diagnostic. Visualisez le centile avec `histogram_quantile(0.99, sum by (le, service_name) (rate(traces_span_metrics_duration_milliseconds_bucket[5m])))`. Dans Tempo, ouvrez les traces les plus lentes du service avec `{ resource.service.name = "units-service" && duration > 500ms }` et repérez, dans la trace, le span où le temps se concentre. Si le profilage continu est en place, descendez de la trace vers le profil pour identifier la fonction coûteuse.
+Diagnostic. Visualisez le centile avec `histogram_quantile(0.99, sum by (le, service_name) (rate(traces_span_metrics_duration_milliseconds_bucket{span_kind="SPAN_KIND_SERVER"}[5m])))`. Dans Tempo, ouvrez les traces les plus lentes du service avec `{ resource.service.name = "units-service" && duration > 500ms }` et repérez, dans la trace, le span où le temps se concentre. Si le profilage continu est en place, descendez de la trace vers le profil pour identifier la fonction coûteuse.
 
 Remédiation. Selon la cause, optimisez le point chaud, ajoutez de la mise en cache, ou augmentez les ressources. Vérifiez le retour du centile sous le seuil.
 
