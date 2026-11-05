@@ -54,7 +54,11 @@ jobs:
       - name: Règles Prometheus (promtool)
         run: |
           docker run --rm --entrypoint promtool -v "$PWD/observability/prometheus/rules:/rules:ro" \
-            prom/prometheus:v3.1.0 check rules /rules/red.yml /rules/probes.yml
+            prom/prometheus:v3.1.0 check rules /rules/red.yml /rules/probes.yml /rules/budgets.yml
+      - name: Tests des règles (promtool)
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD/observability:/obs:ro" -w /obs/tests/prometheus \
+            prom/prometheus:v3.1.0 -c 'promtool test rules *_test.yml'
       - name: Validation du compose (base + durcissement)
         run: |
           docker compose -f observability/docker-compose.yml config -q

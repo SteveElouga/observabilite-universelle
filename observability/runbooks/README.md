@@ -102,7 +102,9 @@ soupçonner le code. Un import massif concurrent est la cause la plus fréquente
 ## BudgetLatenceDepasse
 
 **Ce que ça veut dire.** Une opération de lecture dépasse 2 s au P95 depuis quinze minutes —
-budget ENF-01 épuisé.
+budget ENF-01 épuisé. Seuls les spans SERVEUR comptent (ce que le service rend) : depuis le
+05/11/2026, le navigateur, ses flux tenus ouverts et les appels sortants n'y entrent plus. Le
+résumé donne le P95 en millisecondes.
 
 **Ce qu'on regarde.** *Par service* → l'opération nommée dans l'alerte. Suivre un exemplar
 jusqu'à la trace Tempo pour voir où le temps part.
