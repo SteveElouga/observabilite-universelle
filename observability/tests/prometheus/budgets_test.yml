@@ -1,4 +1,4 @@
-# tests/prometheus/budgets_test.yml — `promtool test rules`
+# tests/prometheus/budgets_test.yml : `promtool test rules`
 # Prouve que les budgets de latence ne lisent que les spans SERVEUR, et que le résumé écrit des
 # millisecondes. Les cas ① et ③ donnent le résultat INVERSE avec l'ancienne expression (tous les
 # spans confondus) : un retour en arrière fait échouer le test, au lieu de passer en silence.
@@ -16,7 +16,7 @@ tests:
         values: "0+0x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="HTTP GET",span_kind="SPAN_KIND_CLIENT",le="1000"}'
         values: "0+0x40"
-      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="HTTP GET",span_kind="SPAN_KIND_CLIENT",le="2500"}'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="HTTP GET",span_kind="SPAN_KIND_CLIENT",le="2000"}'
         values: "0+0x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="HTTP GET",span_kind="SPAN_KIND_CLIENT",le="5000"}'
         values: "0+0x40"
@@ -29,7 +29,7 @@ tests:
         alertname: BudgetLatenceDepasse
         exp_alerts: []
 
-  # ② Un service rend une lecture entre 2,5 et 5 s : le P95 interpolé vaut 4 875 ms, au-dessus de
+  # ② Un service rend une lecture entre 2 et 5 s : le P95 interpolé vaut 4 850 ms, au-dessus de
   #    2 s. L'alerte part, et son résumé l'écrit en millisecondes.
   - interval: 1m
     input_series:
@@ -37,7 +37,7 @@ tests:
         values: "0+0x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="query ListerLesCommandes",span_kind="SPAN_KIND_SERVER",le="1000"}'
         values: "0+0x40"
-      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="query ListerLesCommandes",span_kind="SPAN_KIND_SERVER",le="2500"}'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="query ListerLesCommandes",span_kind="SPAN_KIND_SERVER",le="2000"}'
         values: "0+0x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="query ListerLesCommandes",span_kind="SPAN_KIND_SERVER",le="5000"}'
         values: "0+10x40"
@@ -54,19 +54,19 @@ tests:
               service_name: api
               span_name: query ListerLesCommandes
             exp_annotations:
-              summary: "api / query ListerLesCommandes : P95 à 4875 ms"
+              summary: "api / query ListerLesCommandes : P95 à 4850 ms"
               description: "Le P95 de cette opération dépasse 2 s depuis quinze minutes. Budget de latence de lecture épuisé. Ouvrir le dashboard du service, suivre un exemplar vers la trace."
               runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#budgetlatencedepasse"
 
   # ③ Une écriture lente côté navigateur (span CLIENT « mutation CreerCommande ») ne sonne pas ; la
-  #    même côté serveur, entre 1 et 2,5 s, sonne avec un P95 de 2 425 ms.
+  #    même côté serveur, entre 1 et 2 s, sonne avec un P95 de 1 950 ms.
   - interval: 1m
     input_series:
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="mutation CreerCommande",span_kind="SPAN_KIND_CLIENT",le="500"}'
         values: "0+0x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="mutation CreerCommande",span_kind="SPAN_KIND_CLIENT",le="1000"}'
         values: "0+0x40"
-      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="mutation CreerCommande",span_kind="SPAN_KIND_CLIENT",le="2500"}'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="mutation CreerCommande",span_kind="SPAN_KIND_CLIENT",le="2000"}'
         values: "0+10x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="app-web",span_name="mutation CreerCommande",span_kind="SPAN_KIND_CLIENT",le="5000"}'
         values: "0+10x40"
@@ -78,7 +78,7 @@ tests:
         values: "0+0x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="mutation CreerCommande",span_kind="SPAN_KIND_SERVER",le="1000"}'
         values: "0+0x40"
-      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="mutation CreerCommande",span_kind="SPAN_KIND_SERVER",le="2500"}'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="mutation CreerCommande",span_kind="SPAN_KIND_SERVER",le="2000"}'
         values: "0+10x40"
       - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="api",span_name="mutation CreerCommande",span_kind="SPAN_KIND_SERVER",le="5000"}'
         values: "0+10x40"
@@ -95,6 +95,6 @@ tests:
               service_name: api
               span_name: mutation CreerCommande
             exp_annotations:
-              summary: "api / mutation CreerCommande : écriture à 2425 ms au P95"
+              summary: "api / mutation CreerCommande : écriture à 1950 ms au P95"
               description: "Le P95 de cette écriture dépasse 500 ms depuis quinze minutes. Vérifier les verrous et les requêtes lentes côté base avant de soupçonner le code applicatif."
               runbook_url: "https://github.com/SteveElouga/observabilite-universelle/blob/develop/observability/runbooks/README.md#budgetlatenceecrituredepasse"

@@ -48,7 +48,7 @@
 - **Constat chez un consommateur, en production le 04/11** : `BudgetLatenceDepasse` sonnait et se résolvait presque chaque heure sur le service du navigateur, opération `HTTP GET`, avec un résumé « P95 à 2h 46m 40s ». Le navigateur (Faro) traçait un flux SSE tenu ouvert plusieurs minutes, et les budgets jugeaient tous les spans confondus.
 - **`prometheus/rules/budgets.yml`** : les deux budgets filtrent `span_kind="SPAN_KIND_SERVER"`, comme `red.yml` depuis la PR #40. Un budget est une promesse sur ce que le service rend ; le réseau de l'utilisateur, ses connexions longues, les appels sortants et les requêtes SQL n'y entrent plus.
 - **Unité du résumé** : `humanizeDuration` lit des secondes, la valeur est en millisecondes (10 000 ms devenaient « 2h 46m 40s »). Le résumé écrit `printf "%.0f"` suivi de « ms ».
-- **`tests/prometheus/budgets_test.yml`**, trois cas : un flux CLIENT de plusieurs minutes ne sonne pas, une lecture serveur entre 2,5 et 5 s sonne avec « 4875 ms », une écriture lente ne sonne que côté serveur. Joués contre l'ancienne règle, ils échouent. La CI vérifie désormais `budgets.yml` et joue ce test.
+- **`tests/prometheus/budgets_test.yml`**, trois cas : un flux CLIENT de plusieurs minutes ne sonne pas, une lecture serveur entre 2 et 5 s sonne avec « 4850 ms », une écriture lente ne sonne que côté serveur ; les seaux sont ceux du Collector (500, 1000, 2000, 5000, 10000). Joués contre l'ancienne règle, ils échouent. La CI vérifie désormais `budgets.yml` et joue TOUS les `tests/prometheus/*_test.yml`, qui ne tournaient qu'en local.
 - **Guide** : `runbooks/README.md#budgetlatencedepasse` le dit.
 
 ### 2026-09-08 — Session Claude : durcissement activé et vérifié en conditions réelles (lot #9, jamais testé depuis son écriture)
