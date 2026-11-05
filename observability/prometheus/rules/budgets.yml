@@ -10,6 +10,16 @@
 #
 # Source : traces_span_metrics_duration_milliseconds_bucket (connecteur spanmetrics, §10.3),
 # calculé sur 100 % du trafic avant échantillonnage — donc jamais faussé par le tail sampling.
+#
+# LES SPANS SERVEUR SEULEMENT, comme red.yml. Un budget est une promesse sur ce qu'un service REND.
+# Les spans du navigateur (Faro, span_kind CLIENT) mesuraient autre chose : le réseau de
+# l'utilisateur, et des connexions tenues ouvertes par conception (un flux SSE de plusieurs
+# minutes). Le 04/11/2026, un consommateur recevait ainsi un « BudgetLatenceDepasse » presque
+# chaque heure sur « HTTP GET », le P95 au-delà du dernier seau. Les spans CLIENT et INTERNAL
+# d'un service (appel sortant, requête SQL) restent hors du budget pour la même raison.
+#
+# LA VALEUR EST EN MILLISECONDES. « humanizeDuration » lit des secondes : 10 000 ms s'affichaient
+# « 2h 46m 40s ». Le résumé écrit donc la valeur telle quelle, suivie de « ms ».
 groups:
   - name: budgets-operations
     rules:
@@ -17,11 +27,11 @@ groups:
       - alert: BudgetLatenceDepasse
         expr: |
           histogram_quantile(0.95, sum by (le, service_name, span_name)
-            (rate(traces_span_metrics_duration_milliseconds_bucket[15m]))) > 2000
+            (rate(traces_span_metrics_duration_milliseconds_bucket{span_kind="SPAN_KIND_SERVER"}[15m]))) > 2000
         for: 15m
         labels: { severity: ticket }
         annotations:
-          summary: "{{ $labels.service_name }} / {{ $labels.span_name }} : P95 à {{ $value | humanizeDuration }}"
+          summary: "{{ $labels.service_name }} / {{ $labels.span_name }} : P95 à {{ printf \"%.0f\" $value }} ms"
           description: >-
             Le P95 de cette opération dépasse 2 s depuis quinze minutes. Budget de latence de
             lecture épuisé. Ouvrir le dashboard du service, suivre un exemplar vers la trace.
@@ -35,12 +45,13 @@ groups:
         expr: |
           histogram_quantile(0.95, sum by (le, service_name, span_name)
             (rate(traces_span_metrics_duration_milliseconds_bucket{
+              span_kind="SPAN_KIND_SERVER",
               span_name=~"(?i).*(create|creer|créer|update|modifier|delete|supprimer|mutation).*"
             }[15m]))) > 500
         for: 15m
         labels: { severity: ticket }
         annotations:
-          summary: "{{ $labels.service_name }} / {{ $labels.span_name }} : écriture à {{ $value | humanizeDuration }} au P95"
+          summary: "{{ $labels.service_name }} / {{ $labels.span_name }} : écriture à {{ printf \"%.0f\" $value }} ms au P95"
           description: >-
             Le P95 de cette écriture dépasse 500 ms depuis quinze minutes. Vérifier les verrous et
             les requêtes lentes côté base avant de soupçonner le code applicatif.
